@@ -242,29 +242,22 @@ fn AudioUnitSetProperty(
                 );
             }
             kAudioOutputUnitProperty_SetInputCallback => {
-    let cb = env
-        .mem
-        .read::<AURenderCallbackStruct, false>(in_data.cast());
-
-    if in_scope == kAudioUnitScope_Input {
-        host_object.input_callback = Some(cb);
-        host_object.microphone_enabled = true;
-    }
-
-    let proc_copy = cb.input_proc;
-    let ref_con_copy = cb.input_proc_ref_con;
-
-    log_dbg!(
-        "AudioUnitSetProperty(SetInputCallback) \
-         unit={:?} scope={} element={} proc={:?} ref_con={:?} mic_enabled={}",
-        in_unit,
-        in_scope,
-        in_element,
-        proc_copy,
-        ref_con_copy,
-        host_object.microphone_enabled
-    );
-}
+                let cb = env
+                    .mem
+                    .read::<AURenderCallbackStruct, false>(in_data.cast());
+                host_object.render_callback = Some(cb);
+                let proc_copy = cb.input_proc;
+                let ref_con_copy = cb.input_proc_ref_con;
+                log_dbg!(
+                    "AudioUnitSetProperty(SetInputCallback) \
+                     unit={:?} scope={} element={} proc={:?} ref_con={:?}",
+                    in_unit,
+                    in_scope,
+                    in_element,
+                    proc_copy,
+                    ref_con_copy
+                );
+            }
             kAudioUnitProperty_StreamFormat => {
                 let stream_format = env
                     .mem
@@ -1140,17 +1133,15 @@ pub fn render_audio_unit(env: &mut Environment, audio_unit: AudioUnit) {
     render_audio_unit_buses(env, audio_unit);
 
     let (
-    sample_rate,
-    started,
-    is_running,
-    stream_format,
-    has_input_format,
-    al_source,
-    last_render_time,
-    callback,
-    input_callback,
-    microphone_enabled,
-) = {
+        sample_rate,
+        started,
+        is_running,
+        stream_format,
+        has_input_format,
+        al_source,
+        last_render_time,
+        callback,
+    ) = {
         let at = &mut env.framework_state.audio_toolbox;
         let Some(obj) = at
             .audio_components
@@ -1172,106 +1163,30 @@ pub fn render_audio_unit(env: &mut Environment, audio_unit: AudioUnit) {
             obj.al_source,
             obj.last_render_time,
             obj.render_callback,
-            obj.input_callback,
-            obj.microphone_enabled,
         )
     };
 
     if !started {
-    log_once!("render_audio_unit: skipped (started=false)");
-    return;
-}
-
-if is_running {
-    log_once!("render_audio_unit: skipped (already running handler)");
-    return;
-}
-
-log_dbg!(
-    "MIC STATE enabled={} callback={:?}",
-    microphone_enabled,
-    input_callback.map(|c| c.input_proc)
-);
-
-if microphone_enabled {
-    if let Some(input_cb) = input_callback {
-        log_once!("render_audio_unit: calling microphone callback");
-
-        let action_flags = env.mem.alloc_and_write(0u32);
-
-        let mic_buffer_size = 1024 * 2;
-        let mic_buffer = env.mem.alloc(mic_buffer_size);
-
-        let abl = env.mem.alloc_and_write(AudioBufferList::<1> {
-            number_buffers: 1,
-            buffers: [AudioBuffer {
-                number_channels: 1,
-                data_byte_size: mic_buffer_size,
-                data: mic_buffer,
-            }],
-        });
-
-        log_once!("MIC: before guest callback");
-
-        let _ = input_cb.input_proc.call_from_host(
-            env,
-            (
-                input_cb.input_proc_ref_con,
-                action_flags,
-                nil.cast_void().cast_const(),
-                1u32,
-                1024u32,
-                abl.cast(),
-            ),
-        );
-
-        log_once!("MIC: after guest callback");
-
-        env.mem.free(action_flags.cast_void());
-        env.mem.free(mic_buffer.cast_void());
-        env.mem.free(abl.cast_void().cast());
+        log_once!("render_audio_unit: skipped (started=false)");
+        return;
     }
-}
-
-// Microfone
-if microphone_enabled {
-    if let Some(input_cb) = input_callback {
-        log_once!("render_audio_unit: calling microphone callback");
-
-        let action_flags = env.mem.alloc_and_write(0u32);
-
-        let mic_buffer_size = 1024 * 2;
-        let mic_buffer = env.mem.alloc(mic_buffer_size);
-
-        let abl = env.mem.alloc_and_write(AudioBufferList::<1> {
-            number_buffers: 1,
-            buffers: [AudioBuffer {
-                number_channels: 1,
-                data_byte_size: mic_buffer_size,
-                data: mic_buffer,
-            }],
-        });
-
-        let _ = input_cb.input_proc.call_from_host(
-            env,
-            (
-                input_cb.input_proc_ref_con,
-                action_flags,
-                nil.cast_void().cast_const(),
-                1u32,
-                1024u32,
-                abl.cast(),
-            ),
-        );
-
-        env.mem.free(action_flags.cast_void());
-        env.mem.free(mic_buffer.cast_void());
-        env.mem.free(abl.cast_void().cast());
+    if is_running {
+        log_once!("render_audio_unit: skipped (already running handler)");
+        return;
     }
-}
 
-let Some(al_source) = al_source else {
-    log_once!("render_audio_unit: skipped (al_source = None)");
+    if let Some(obj) = env
+        .framework_state
+        .audio_toolbox
+        .audio_components
+        .audio_component_instances
+        .get_mut(&audio_unit)
+    {
+        obj.is_running_handler = true;
+    }
+
+    let Some(al_source) = al_source else {
+        log_once!("render_audio_unit: skipped (al_source = None)");
         if let Some(obj) = env
             .framework_state
             .audio_toolbox
