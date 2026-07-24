@@ -103,7 +103,14 @@ pub struct AudioComponentInstanceHostObject {
     pub global_stream_format: AudioStreamBasicDescription,
     pub input_stream_format: Option<AudioStreamBasicDescription>,
     pub output_stream_format: Option<AudioStreamBasicDescription>,
+
+    // Saída de áudio
     pub render_callback: Option<AURenderCallbackStruct>,
+
+    // Entrada de microfone
+    pub input_callback: Option<AURenderCallbackStruct>,
+    pub microphone_enabled: bool,
+
     pub last_render_time: Option<Instant>,
     pub al_source: Option<ALuint>,
     pub is_running_handler: bool,
@@ -134,6 +141,8 @@ impl Default for AudioComponentInstanceHostObject {
             },
             input_stream_format: None,
             output_stream_format: None,
+            input_callback: None,
+            microphone_enabled: false,
             render_callback: None,
             last_render_time: None,
             al_source: None,
@@ -247,7 +256,7 @@ fn AudioComponentInstanceNew(
     }
 
     let mut host_object = AudioComponentInstanceHostObject::default();
-    host_object.is_3d_mixer = true;
+    host_object.is_3d_mixer = false;
 
     let guest_instance: AudioComponentInstance = env
         .mem
@@ -272,7 +281,7 @@ fn AudioComponentInstanceNew(
 /// минуя обычный путь `AudioComponentInstanceNew`.
 pub fn create_audio_unit_instance(env: &mut Environment) -> AudioComponentInstance {
     let mut host_object = AudioComponentInstanceHostObject::default();
-    host_object.is_3d_mixer = true;
+    host_object.is_3d_mixer = false;
     let guest_instance: AudioComponentInstance = env
         .mem
         .alloc_and_write(OpaqueAudioComponentInstance { _pad: 0 });
