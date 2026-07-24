@@ -682,15 +682,14 @@ fn CGImageSourceCreateThumbnailAtIndex(
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    // Existing entries ...
     export_c_func!(CGImageCreate(_, _, _, _, _, _, _, _, _, _, _)),
     export_c_func!(CGImageRelease(_)),
     export_c_func!(CGImageRetain(_)),
     export_c_func!(CGImageCreateCopyWithColorSpace(_, _)),
     export_c_func!(CGImageCreateWithPNGDataProvider(_, _, _, _)),
     export_c_func!(CGImageCreateWithJPEGDataProvider(_, _, _, _)),
-    export_c_func!(CGImageCreateWithImageInRect(_, _, _)),
-    export_c_func!(CGImageCreateWithMask(_, _, _)),
+    export_c_func!(CGImageCreateWithImageInRect(_, _)),
+    export_c_func!(CGImageCreateWithMask(_, _)),
     export_c_func!(CGImageCreateMaskWithImageMask(_)),
     export_c_func!(CGImageCreateCopy(_)),
     export_c_func!(CGImageGetAlphaInfo(_)),
@@ -710,7 +709,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGImageGetTypeID()),
     export_c_func!(CGImageGetUTType(_)),
     export_c_func!(CGImageGetPixelFormatInfo(_)),
-    export_c_func!(CGImageCreateWithBitmapData(_, _, _, _, _, _)),
+    export_c_func!(CGImageCreateWithBitmapData(_, _, _, _, _)),
     export_c_func!(CGImageCreateFlippedVertically(_)),
     export_c_func!(CGImageCreateScaled(_, _, _)),
     export_c_func!(CGImageReadPixels(_, _)),
