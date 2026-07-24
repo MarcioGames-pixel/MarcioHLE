@@ -1220,26 +1220,32 @@ fn try_cocos_missing_selector_compat(
         return true;
     }
 
-    // Float / CGFloat defaults.
-    if matches!(
-        selector_name,
-        "scale"
-            | "scaleX"
-            | "scaleY"
-            | "getScale"
-            | "getScaleX"
-            | "getScaleY"
-            | "contentScaleFactor"
-            | "screenScale"
-            | "getContentScaleFactor"
-            | "nativeScale"
-            | "renderScale"
-            | "dpiScale"
-    ) {
-        cocos_selector_log_once(class_name, selector_name, "1.0f");
-        objc_ret_f32(env, 1.0);
-        return true;
-    }
+    // UIImage scale compatibility
+if selector_name == "scale" && class_name.contains("UIImage") {
+    objc_ret_f32(env, 1.0);
+    return true;
+}
+
+// Float / CGFloat defaults.
+if matches!(
+    selector_name,
+    "scale"
+        | "scaleX"
+        | "scaleY"
+        | "getScale"
+        | "getScaleX"
+        | "getScaleY"
+        | "contentScaleFactor"
+        | "screenScale"
+        | "getContentScaleFactor"
+        | "nativeScale"
+        | "renderScale"
+        | "dpiScale"
+) {
+    cocos_selector_log_once(class_name, selector_name, "1.0f");
+    objc_ret_f32(env, 1.0);
+    return true;
+}
     if matches!(
         selector_name,
         "rotation"
