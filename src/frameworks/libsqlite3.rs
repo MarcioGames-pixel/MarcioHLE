@@ -870,6 +870,28 @@ pub fn sqlite3_errcode(_env: &mut Environment, _p_db: u32) -> u32 {
     SQLITE_OK
 }
 
+pub fn sqlite3_libversion(env: &mut Environment) -> u32 {
+    let text = "3.7.0\0";
+
+    let ptr = env.mem.alloc(text.len().try_into().unwrap());
+    let base = ptr.to_bits();
+
+    for (i, b) in text.as_bytes().iter().enumerate() {
+        let p: MutPtr<u8> = MutPtr::from_bits(base + i as u32);
+        env.mem.write(p, *b);
+    }
+
+    base
+}
+
+pub fn sqlite3_initialize(_env: &mut Environment) -> u32 {
+    SQLITE_OK
+}
+
+pub fn sqlite3_threadsafe(_env: &mut Environment) -> i32 {
+    1
+}
+
 // Export all functions
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(sqlite3_open(_, _)),
@@ -905,11 +927,14 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(sqlite3_free(_)),
     export_c_func!(sqlite3_busy_timeout(_, _)),
     export_c_func!(sqlite3_errcode(_)),
+    export_c_func!(sqlite3_libversion()),
+    export_c_func!(sqlite3_initialize()),
+    export_c_func!(sqlite3_threadsafe()),
 ];
 
 pub const DYLIB: HostDylib = HostDylib {
     path: "/usr/lib/libsqlite3.dylib",
-    aliases: &["/usr/lib/libsqlite3.0.dylib"],
+    aliases: &["/usr/lib/libsqlite3.0.dylib", "sqlite3", "libsqlite3", "libsqlite3.dylib", "sqlite3.dylib"],
     class_exports: &[],
     constant_exports: &[],
     function_exports: &[FUNCTIONS],
