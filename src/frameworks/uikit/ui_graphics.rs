@@ -67,13 +67,36 @@ fn UIGraphicsBeginImageContextWithOptions(
     let height = (size.height * effective_scale).ceil() as u32;
 
     if width == 0 || height == 0 {
-        log!(
-            "Warning: UIGraphicsBeginImageContextWithOptions: zero size ({}, {}), skipping",
-            width,
-            height
-        );
-        return;
+    log!(
+        "Warning: UIGraphicsBeginImageContextWithOptions: fixing zero size ({}, {})",
+        width,
+        height
+    );
+
+    let width = width.max(1);
+    let height = height.max(1);
+
+    let bytes_per_row = width * 4;
+    let data: MutVoidPtr = env.mem.alloc(bytes_per_row * height).cast();
+
+    let context = CGBitmapContextCreate(
+        env,
+        data,
+        width as _,
+        height as _,
+        8,
+        bytes_per_row as _,
+        nil,
+        0x0002_0008,
+    );
+
+    if !context.is_null() {
+        UIGraphicsPushContext(env, context);
+        CGContextRelease(env, context);
     }
+
+    return;
+}
 
     let bytes_per_row = width * 4;
     let data: MutVoidPtr = env.mem.alloc(bytes_per_row * height).cast();
