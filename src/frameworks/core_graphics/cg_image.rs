@@ -277,7 +277,12 @@ fn CGImageCreateWithImageInRect(
         return nil;
     }
 
-    let src_pixels = env.objc.borrow::<CGImageHostObject>(image).image.pixels();
+    let src_pixels = env
+    .objc
+    .borrow::<CGImageHostObject>(image)
+    .image
+    .pixels()
+    .to_vec();
 
     // Copy the sub-region row by row (RGBA — 4 bytes per pixel).
     let mut dst = vec![0u8; (width * height * 4) as usize];
@@ -684,8 +689,8 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGImageCreateCopyWithColorSpace(_, _)),
     export_c_func!(CGImageCreateWithPNGDataProvider(_, _, _, _)),
     export_c_func!(CGImageCreateWithJPEGDataProvider(_, _, _, _)),
-    export_c_func!(CGImageCreateWithImageInRect(_, _)),
-    export_c_func!(CGImageCreateWithMask(_, _)),
+    export_c_func!(CGImageCreateWithImageInRect(_, _, _)),
+    export_c_func!(CGImageCreateWithMask(_, _, _)),
     export_c_func!(CGImageCreateMaskWithImageMask(_)),
     export_c_func!(CGImageCreateCopy(_)),
     export_c_func!(CGImageGetAlphaInfo(_)),
@@ -705,7 +710,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGImageGetTypeID()),
     export_c_func!(CGImageGetUTType(_)),
     export_c_func!(CGImageGetPixelFormatInfo(_)),
-    export_c_func!(CGImageCreateWithBitmapData(_, _, _, _, _)),
+    export_c_func!(CGImageCreateWithBitmapData(_, _, _, _, _, _)),
     export_c_func!(CGImageCreateFlippedVertically(_)),
     export_c_func!(CGImageCreateScaled(_, _, _)),
     export_c_func!(CGImageReadPixels(_, _)),
