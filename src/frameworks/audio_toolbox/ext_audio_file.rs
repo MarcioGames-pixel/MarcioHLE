@@ -208,10 +208,10 @@ pub fn ExtAudioFileCreateWithURL(
     };
 
     let audio_file = AudioFileHostObject::Writable {
-        format,
-        data: Vec::new(),
-        user_data: None,
-    };
+    format,
+    data: Vec::new(),
+    user_data: Vec::new(),
+};
 
     register_ext_audio_file(
         env,
