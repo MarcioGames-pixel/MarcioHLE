@@ -170,6 +170,57 @@ pub fn ExtAudioFileOpenURL(
     register_ext_audio_file(env, audio_file, None, out_ext_audio_file)
 }
 
+pub fn ExtAudioFileCreateWithURL(
+    env: &mut Environment,
+    in_url: CFURLRef,
+    in_file_type: u32,
+    in_format: MutPtr<AudioStreamBasicDescription>,
+    in_channel_layout: MutVoidPtr,
+    in_flags: u32,
+    out_ext_audio_file: MutPtr<ExtAudioFileRef>,
+) -> OSStatus {
+    return_if_null!(in_url);
+    return_if_null!(out_ext_audio_file);
+
+    let path = to_rust_path(env, in_url);
+
+    log_dbg!(
+        "ExtAudioFileCreateWithURL({:?}) type={} flags={}",
+        path,
+        in_file_type,
+        in_flags
+    );
+
+    let format = if !in_format.is_null() {
+        env.mem.read(in_format)
+    } else {
+        AudioStreamBasicDescription {
+            sample_rate: 44100.0,
+            format_id: kAudioFormatLinearPCM,
+            format_flags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+            bytes_per_packet: 4,
+            frames_per_packet: 1,
+            bytes_per_frame: 4,
+            channels_per_frame: 2,
+            bits_per_channel: 16,
+            _reserved: 0,
+        }
+    };
+
+    let audio_file = AudioFileHostObject::Writable {
+        format,
+        data: Vec::new(),
+        user_data: None,
+    };
+
+    register_ext_audio_file(
+        env,
+        audio_file,
+        None,
+        out_ext_audio_file,
+    )
+}
+
 pub fn ExtAudioFileWrapAudioFileID(
     env: &mut Environment,
     in_audio_file: AudioFileID,
@@ -536,6 +587,59 @@ pub fn ExtAudioFileRead(
     }
 }
 
+pub fn ExtAudioFileWrite(
+    env: &mut Environment,
+    in_ext_audio_file: ExtAudioFileRef,
+    in_num_frames: u32,
+    io_data: MutPtr<AudioBufferList>,
+) -> OSStatus {
+    return_if_null!(in_ext_audio_file);
+    return_if_null!(io_data);
+
+    let abl: AudioBufferList = env.mem.read(io_data);
+
+    let data_ptr = abl.first_buffer.data;
+    let data_size = abl.first_buffer.data_byte_size;
+
+    if data_ptr.is_null() || data_size == 0 {
+        return 0;
+    }
+
+    let buffer = env.mem.bytes_at(data_ptr.cast(), data_size).to_vec();
+
+    let Some(host_object) = State::get(&mut env.framework_state)
+        .ext_audio_files
+        .get_mut(&in_ext_audio_file)
+    else {
+        log!(
+            "Warning: ExtAudioFileWrite(): unknown ExtAudioFileRef {:?}",
+            in_ext_audio_file
+        );
+        return kExtAudioFileError_InvalidOperationOrder;
+    };
+
+    match &mut host_object.audio_file {
+        AudioFileHostObject::Writable { data, .. } => {
+            data.extend_from_slice(&buffer);
+
+            host_object.frame_position += in_num_frames as u64;
+
+            log_dbg!(
+                "ExtAudioFileWrite(): wrote {} bytes ({} frames)",
+                data_size,
+                in_num_frames
+            );
+
+            0
+        }
+
+        _ => {
+            log!("Warning: ExtAudioFileWrite(): file is not writable");
+            kExtAudioFileError_InvalidOperationOrder
+        }
+    }
+}
+
 pub fn ExtAudioFileSeek(
     env: &mut Environment,
     in_ext_audio_file: ExtAudioFileRef,
@@ -661,12 +765,14 @@ fn build_asbd(audio_file: &AudioFileHostObject) -> AudioStreamBasicDescription {
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(ExtAudioFileOpenURL(_, _)),
+    export_c_func!(ExtAudioFileCreateWithURL(_, _, _, _, _, _)),
     export_c_func!(ExtAudioFileWrapAudioFileID(_, _, _)),
     export_c_func!(ExtAudioFileDispose(_)),
     export_c_func!(ExtAudioFileGetPropertyInfo(_, _, _, _)),
     export_c_func!(ExtAudioFileGetProperty(_, _, _, _)),
     export_c_func!(ExtAudioFileSetProperty(_, _, _, _)),
     export_c_func!(ExtAudioFileRead(_, _, _)),
+    export_c_func!(ExtAudioFileWrite(_, _, _)),
     export_c_func!(ExtAudioFileSeek(_, _)),
     export_c_func!(ExtAudioFileTell(_, _)),
 ];
