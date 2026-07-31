@@ -502,14 +502,28 @@ pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
     // Mapeia e vincula todos os parâmetros dinâmicos (bindings) salvos
     let mut params: Vec<rusqlite::types::Value> = Vec::new();
 
-for (_idx, val) in &entry.bindings {
-    let value = match val {
-        BindValue::Int(i) => rusqlite::types::Value::Integer(*i as i64),
-        BindValue::Int64(i) => rusqlite::types::Value::Integer(*i),
-        BindValue::Double(f) => rusqlite::types::Value::Real(*f),
-        BindValue::Text(s) => rusqlite::types::Value::Text(s.clone()),
-        BindValue::Blob(b) => rusqlite::types::Value::Blob(b.clone()),
-        BindValue::Null => rusqlite::types::Value::Null,
+let max_index = entry.bindings.keys().max().copied().unwrap_or(0);
+
+for i in 1..=max_index {
+    let value = match entry.bindings.get(&i) {
+        Some(BindValue::Int(v)) => {
+            rusqlite::types::Value::Integer(*v as i64)
+        }
+        Some(BindValue::Int64(v)) => {
+            rusqlite::types::Value::Integer(*v)
+        }
+        Some(BindValue::Double(v)) => {
+            rusqlite::types::Value::Real(*v)
+        }
+        Some(BindValue::Text(v)) => {
+            rusqlite::types::Value::Text(v.clone())
+        }
+        Some(BindValue::Blob(v)) => {
+            rusqlite::types::Value::Blob(v.clone())
+        }
+        Some(BindValue::Null) | None => {
+            rusqlite::types::Value::Null
+        }
     };
 
     params.push(value);
