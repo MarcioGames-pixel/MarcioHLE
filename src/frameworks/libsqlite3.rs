@@ -905,11 +905,14 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(sqlite3_free(_)),
     export_c_func!(sqlite3_busy_timeout(_, _)),
     export_c_func!(sqlite3_errcode(_)),
+    export_c_func!(sqlite3_libversion()),
+    export_c_func!(sqlite3_initialize()),
+    export_c_func!(sqlite3_threadsafe()),
 ];
 
 pub const DYLIB: HostDylib = HostDylib {
     path: "/usr/lib/libsqlite3.dylib",
-    aliases: &["/usr/lib/libsqlite3.0.dylib"],
+    aliases: &["/usr/lib/libsqlite3.0.dylib", "sqlite3", "libsqlite3", "libsqlite3.dylib", "sqlite3.dylib"],
     class_exports: &[],
     constant_exports: &[],
     function_exports: &[FUNCTIONS],
