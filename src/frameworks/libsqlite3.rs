@@ -473,7 +473,7 @@ pub fn sqlite3_bind_blob(
 }
 
 // ---------- sqlite3_step ----------
-pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
+pub fn sqlite3_step(_env: &mut Environment, stmt: u32) -> u32 {
     let (sql, db_handle, bindings) = {
         let stmts = SQLITE_STATEMENTS.lock().unwrap();
 
@@ -548,9 +548,16 @@ pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
     }
 
 
-    let mut rows = match native_stmt.query(
-        rusqlite::params_from_iter(params.iter())
-    ) {
+    let column_names: Vec<String> = native_stmt
+    .column_names()
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+
+
+let mut rows = match native_stmt.query(
+    rusqlite::params_from_iter(params.iter())
+) {
         Ok(r) => r,
 
         Err(e) => {
@@ -627,14 +634,8 @@ pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
 
 
                 if entry.column_names.is_empty() {
-
-                    entry.column_names =
-                        native_stmt
-                        .column_names()
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect();
-                }
+    entry.column_names = column_names.clone();
+                 }
             }
 
 
