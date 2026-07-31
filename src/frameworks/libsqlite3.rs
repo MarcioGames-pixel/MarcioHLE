@@ -334,47 +334,6 @@ pub fn sqlite3_prepare_v2(
         return SQLITE_ERROR;
     }
 
-    let stmt_handle = alloc_handle();
-    SQLITE_STATEMENTS.lock().unwrap().insert(
-        stmt_handle,
-        StmtEntry {
-            db_handle: p_db,sql,bindings: HashMap::new(),columns: Vec::new(),column_names: Vec::new(),column_name_ptrs: HashMap::new(),done: false,},);if pp_stmt != 0 {let p: MutPtr = MutPtr::from_bits(pp_stmt);env.mem.write(p, stmt_handle);}SQLITE_OK}
-
-
-    // Valida se a conexão com o banco de dados existe
-    {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        if !handles.contains_key(&p_db) {
-            set_error(p_db, "no such connection".into());
-            if pp_stmt != 0 {
-                let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
-                env.mem.write(p, 0u32);
-            }
-            return SQLITE_ERROR;
-        }
-    }
-
-    // Valida a query SQL tentando compilá-la nativamente no rusqlite
-    let valid = {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        let conn = handles.get(&p_db).unwrap();
-        conn.prepare(&sql).is_ok()
-    };
-
-    if !valid {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        let conn = handles.get(&p_db).unwrap();
-        let err = conn.prepare(&sql).unwrap_err();
-        let msg = format!("{}", err);
-        log!("libsqlite3: prepare error: {}", msg);
-        set_error(p_db, msg);
-        if pp_stmt != 0 {
-            let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
-            env.mem.write(p, 0u32);
-        }
-        return SQLITE_ERROR;
-    }
-
     // Aloca o handle virtual e registra a declaração no emulador
     let stmt_handle = alloc_handle();
     SQLITE_STATEMENTS.lock().unwrap().insert(
@@ -463,36 +422,6 @@ pub fn sqlite3_bind_text(
     match stmts.get_mut(&stmt) {
         Some(entry) => {
             entry.bindings.insert(index as usize, BindValue::Text(text));
-            SQLITE_OK
-        }
-        None => SQLITE_MISUSE,
-    }
-}
-
-// ---------- sqlite3_bind_blob ----------
-pub fn sqlite3_bind_blob(
-    env: &mut Environment,
-    stmt: u32,
-    index: i32,
-    blob_ptr: u32,
-    n_bytes: i32,
-    _destructor: u32,
-) -> u32 {
-    let blob = if blob_ptr == 0 || n_bytes <= 0 {
-        Vec::new()
-    } else {
-        let mut bytes = Vec::with_capacity(n_bytes as usize);
-        for i in 0..(n_bytes as u32) {
-            let p: ConstPtr<u8> = ConstPtr::from_bits(blob_ptr + i);
-            bytes.push(env.mem.read(p));
-        }
-        bytes
-    };
-
-    let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get_mut(&stmt) {
-        Some(entry) => {
-            entry.bindings.insert(index as usize, BindValue::Blob(blob));
             SQLITE_OK
         }
         None => SQLITE_MISUSE,
@@ -625,71 +554,6 @@ pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
     }
 }
 
-// ---------- sqlite3_column_int ----------
-pub fn sqlite3_column_int(_env: &mut Environment, stmt: u32, col: i32) -> i32 {
-    let stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get(&stmt) {
-        Some(entry) => {
-            if let Some(ColumnValue::Int(val)) = entry.columns.get(col as usize) {
-                *val as i32
-            } else {
-                0
-            }
-        }
-        None => 0,
-    }
-}
-
-// ---------- sqlite3_column_int64 ----------
-pub fn sqlite3_column_int64(_env: &mut Environment, stmt: u32, col: i32) -> i64 {
-    let stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get(&stmt) {
-        Some(entry) => {
-            if let Some(ColumnValue::Int(val)) = entry.columns.get(col as usize) {
-                *val
-            } else {
-                0
-            }
-        }
-        None => 0,
-    }
-}
-
-// ---------- sqlite3_column_text ----------
-pub fn sqlite3_column_text(env: &mut Environment, stmt: u32, col: i32) -> u32 {
-    let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get_mut(&stmt) {
-        Some(entry) => {
-            if let Some(ColumnValue::Text(val)) = entry.columns.get(col as usize) {
-                // Aloca dinamicamente na memória convidada (Guest mem) para o iOS ler a string
-                if let Some(&ptr) = entry.column_name_ptrs.get(&col) {
-                    ptr
-                } else {
-                    let bytes = val.as_bytes();
-                    let len = bytes.len() as u32;
-                    // Força alocação segura na Heap virtual do emulador
-                    if let Ok(allocated_ptr) = env.heap.alloc(len + 1) {
-                        for (i, &b) in bytes.iter().enumerate() {
-                            let p: MutPtr<u8> = MutPtr::from_bits(allocated_ptr + i as u32);
-                            env.mem.write(p, b);
-                        }
-                        let p_tail: MutPtr<u8> = MutPtr::from_bits(allocated_ptr + len);
-                        env.mem.write(p_tail, 0u8); // Nul terminator \0
-
-                        entry.column_name_ptrs.insert(col, allocated_ptr);
-                        allocated_ptr
-                    } else {
-                        0
-                    }
-                }
-            } else {
-                0
-            }
-        }
-        None => 0,
-    }
-}
-
 // ---------- sqlite3_finalize ----------
 pub fn sqlite3_finalize(env: &mut Environment, stmt: u32) -> u32 {
     let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
@@ -818,6 +682,40 @@ pub fn sqlite3_column_type(_env: &mut Environment, stmt_handle: u32, col: i32) -
             Some(ColumnValue::Null) | None => SQLITE_NULL,
         },
         None => 5, // SQLITE_NULL
+    }
+}
+
+// ---------- sqlite3_reset ----------
+//
+// Resets a prepared statement back to its initial state.
+// SQLite keeps the SQL and bindings, but clears the execution state.
+//
+pub fn sqlite3_reset(_env: &mut Environment, stmt_handle: u32) -> u32 {
+    let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+
+    match stmts.get_mut(&stmt_handle) {
+        Some(entry) => {
+            entry.columns.clear();
+            entry.done = false;
+            SQLITE_OK
+        }
+        None => SQLITE_MISUSE,
+    }
+}
+
+// ---------- sqlite3_clear_bindings ----------
+//
+// Removes all parameter bindings from a prepared statement.
+//
+pub fn sqlite3_clear_bindings(_env: &mut Environment, stmt_handle: u32) -> u32 {
+    let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+
+    match stmts.get_mut(&stmt_handle) {
+        Some(entry) => {
+            entry.bindings.clear();
+            SQLITE_OK
+        }
+        None => SQLITE_MISUSE,
     }
 }
 
