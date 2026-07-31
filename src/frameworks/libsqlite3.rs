@@ -905,9 +905,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(sqlite3_free(_)),
     export_c_func!(sqlite3_busy_timeout(_, _)),
     export_c_func!(sqlite3_errcode(_)),
-    export_c_func!(sqlite3_libversion()),
-    export_c_func!(sqlite3_initialize()),
-    export_c_func!(sqlite3_threadsafe()),
 ];
 
 pub const DYLIB: HostDylib = HostDylib {
