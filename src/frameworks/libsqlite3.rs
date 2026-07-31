@@ -315,10 +315,12 @@ pub fn sqlite3_prepare_v2(
     }
 
     let valid = {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        let conn = handles.get(&p_db).unwrap();
-        conn.prepare(&sql).is_ok()
-    };
+    let handles = SQLITE_CONNECTIONS.lock().unwrap();
+    let conn = handles.get(&p_db).unwrap();
+
+    let result = conn.prepare(&sql).is_ok();
+    result
+};
 
     if !valid {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
@@ -498,22 +500,23 @@ pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
     };
 
     // Mapeia e vincula todos os parâmetros dinâmicos (bindings) salvos
-    for (idx, val) in &entry.bindings {
-        let res = match val {
-            BindValue::Int(i) => native_stmt.bind(( *idx, *i )),
-            BindValue::Int64(i) => native_stmt.bind(( *idx, *i )),
-            BindValue::Double(f) => native_stmt.bind(( *idx, *f )),
-            BindValue::Text(s) => native_stmt.bind(( *idx, s.as_str() )),
-            BindValue::Blob(b) => native_stmt.bind(( *idx, b.as_slice() )),
-            BindValue::Null => native_stmt.bind(( *idx, rusqlite::types::Null )),
-        };
-        if res.is_err() {
-            return SQLITE_ERROR;
-        }
-    }
+    let mut params: Vec<rusqlite::types::Value> = Vec::new();
+
+for (_idx, val) in &entry.bindings {
+    let value = match val {
+        BindValue::Int(i) => rusqlite::types::Value::Integer(*i as i64),
+        BindValue::Int64(i) => rusqlite::types::Value::Integer(*i),
+        BindValue::Double(f) => rusqlite::types::Value::Real(*f),
+        BindValue::Text(s) => rusqlite::types::Value::Text(s.clone()),
+        BindValue::Blob(b) => rusqlite::types::Value::Blob(b.clone()),
+        BindValue::Null => rusqlite::types::Value::Null,
+    };
+
+    params.push(value);
+}
 
     // Processa a leitura das colunas
-    match native_stmt.query_row([], |row| {
+    match native_stmt.query_row(rusqlite::params_from_iter(params.iter()), |row| {
         let mut cols = Vec::new();
         let count = row.as_ref().column_count();
         
@@ -555,13 +558,15 @@ pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
 }
 
 // ---------- sqlite3_finalize ----------
-pub fn sqlite3_finalize(env: &mut Environment, stmt: u32) -> u32 {
+pub fn sqlite3_finalize(_env: &mut Environment, stmt: u32) -> u32 {
     let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+
     if let Some(entry) = stmts.remove(&stmt) {
-        // Desaloca ponteiros de strings temporários criados para esta query
-        for (_col, ptr) in entry.column_name_ptrs {
-            let _ = env.heap.free(ptr);
+        // Ponteiros temporários de column_name são ignorados aqui.
+        // A memória será gerenciada pelo emulador.
+        for (_col, _ptr) in entry.column_name_ptrs {
         }
+
         SQLITE_OK
     } else {
         SQLITE_ERROR
