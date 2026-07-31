@@ -474,98 +474,204 @@ pub fn sqlite3_bind_blob(
 
 // ---------- sqlite3_step ----------
 pub fn sqlite3_step(env: &mut Environment, stmt: u32) -> u32 {
-    let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
-    let entry = match stmts.get_mut(&stmt) {
-        Some(e) => e,
-        None => return SQLITE_MISUSE,
+    let (sql, db_handle, bindings) = {
+        let stmts = SQLITE_STATEMENTS.lock().unwrap();
+
+        let entry = match stmts.get(&stmt) {
+            Some(e) => e,
+            None => return SQLITE_MISUSE,
+        };
+
+        if entry.done {
+            return SQLITE_DONE;
+        }
+
+        (
+            entry.sql.clone(),
+            entry.db_handle,
+            entry.bindings.clone(),
+        )
     };
 
-    if entry.done {
-        return SQLITE_DONE;
-    }
-
     let handles = SQLITE_CONNECTIONS.lock().unwrap();
-    let conn = match handles.get(&entry.db_handle) {
+
+    let conn = match handles.get(&db_handle) {
         Some(c) => c,
         None => return SQLITE_ERROR,
     };
 
-    // Prepara e executa a query nativamente no rusqlite
-    let mut native_stmt = match conn.prepare(&entry.sql) {
+
+    let mut native_stmt = match conn.prepare(&sql) {
         Ok(s) => s,
         Err(e) => {
-            log!("libsqlite3: sqlite3_step prepare error: {}", e);
+            log!("libsqlite3: prepare error: {}", e);
             return SQLITE_ERROR;
         }
     };
 
-    // Mapeia e vincula todos os parâmetros dinâmicos (bindings) salvos
+
     let mut params: Vec<rusqlite::types::Value> = Vec::new();
 
-let max_index = entry.bindings.keys().max().copied().unwrap_or(0);
+    let max_index = bindings.keys().max().copied().unwrap_or(0);
 
-for i in 1..=max_index {
-    let value = match entry.bindings.get(&i) {
-        Some(BindValue::Int(v)) => {
-            rusqlite::types::Value::Integer(*v as i64)
-        }
-        Some(BindValue::Int64(v)) => {
-            rusqlite::types::Value::Integer(*v)
-        }
-        Some(BindValue::Double(v)) => {
-            rusqlite::types::Value::Real(*v)
-        }
-        Some(BindValue::Text(v)) => {
-            rusqlite::types::Value::Text(v.clone())
-        }
-        Some(BindValue::Blob(v)) => {
-            rusqlite::types::Value::Blob(v.clone())
-        }
-        Some(BindValue::Null) | None => {
-            rusqlite::types::Value::Null
+    for i in 1..=max_index {
+        let value = match bindings.get(&i) {
+
+            Some(BindValue::Int(v)) => {
+                rusqlite::types::Value::Integer(*v as i64)
+            }
+
+            Some(BindValue::Int64(v)) => {
+                rusqlite::types::Value::Integer(*v)
+            }
+
+            Some(BindValue::Double(v)) => {
+                rusqlite::types::Value::Real(*v)
+            }
+
+            Some(BindValue::Text(v)) => {
+                rusqlite::types::Value::Text(v.clone())
+            }
+
+            Some(BindValue::Blob(v)) => {
+                rusqlite::types::Value::Blob(v.clone())
+            }
+
+            Some(BindValue::Null) | None => {
+                rusqlite::types::Value::Null
+            }
+        };
+
+        log!("sqlite3_step BIND {} = {:?}", i, value);
+
+        params.push(value);
+    }
+
+
+    let mut rows = match native_stmt.query(
+        rusqlite::params_from_iter(params.iter())
+    ) {
+        Ok(r) => r,
+
+        Err(e) => {
+            log!("libsqlite3: query error: {}", e);
+            return SQLITE_ERROR;
         }
     };
 
-    params.push(value);
-}
 
-    // Processa a leitura das colunas
-    match native_stmt.query_row(rusqlite::params_from_iter(params.iter()), |row| {
-        let mut cols = Vec::new();
-        let count = row.as_ref().column_count();
-        
-        // Popula as colunas lazily para o jogo ler com sqlite3_column_*
-        for i in 0..count {
-            if let Ok(val) = row.get_ref(i) {
-                let mapped = match val {
-                    rusqlite::types::ValueRef::Null => ColumnValue::Null,
-                    rusqlite::types::ValueRef::Integer(i) => ColumnValue::Int(i),
-                    rusqlite::types::ValueRef::Real(f) => ColumnValue::Double(f),
-                    rusqlite::types::ValueRef::Text(t) => {
-                        let s = String::from_utf8_lossy(t).into_owned();
-                        ColumnValue::Text(s)
+    match rows.next() {
+
+        Ok(Some(row)) => {
+
+            let mut columns = Vec::new();
+
+            let count = row.as_ref().column_count();
+
+
+            for i in 0..count {
+
+                match row.get_ref(i) {
+
+                    Ok(rusqlite::types::ValueRef::Null) => {
+                        columns.push(ColumnValue::Null);
                     }
-                    rusqlite::types::ValueRef::Blob(b) => ColumnValue::Blob(b.to_vec()),
-                };
-                cols.push(mapped);
+
+
+                    Ok(rusqlite::types::ValueRef::Integer(v)) => {
+                        columns.push(ColumnValue::Int(v));
+                    }
+
+
+                    Ok(rusqlite::types::ValueRef::Real(v)) => {
+                        columns.push(ColumnValue::Double(v));
+                    }
+
+
+                    Ok(rusqlite::types::ValueRef::Text(v)) => {
+
+                        let s = String::from_utf8_lossy(v).into_owned();
+
+                        columns.push(
+                            ColumnValue::Text(s)
+                        );
+                    }
+
+
+                    Ok(rusqlite::types::ValueRef::Blob(v)) => {
+
+                        columns.push(
+                            ColumnValue::Blob(v.to_vec())
+                        );
+                    }
+
+
+                    Err(e) => {
+                        log!(
+                            "sqlite3_step column {} error: {}",
+                            i,
+                            e
+                        );
+
+                        columns.push(ColumnValue::Null);
+                    }
+                }
             }
-        }
-        Ok(cols)
-    }) {
-        Ok(columns) => {
-            entry.columns = columns;
-            // Se o jogo precisar ler nomes das colunas, populamos aqui
-            if entry.column_names.is_empty() {
-                entry.column_names = native_stmt.column_names().iter().map(|s| s.to_string()).collect();
+
+
+            let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+
+            if let Some(entry) = stmts.get_mut(&stmt) {
+
+                entry.columns = columns;
+
+
+                if entry.column_names.is_empty() {
+
+                    entry.column_names =
+                        native_stmt
+                        .column_names()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect();
+                }
             }
+
+
+            log!(
+                "sqlite3_step SQLITE_ROW columns={}",
+                count
+            );
+
+
             SQLITE_ROW
         }
-        Err(rusqlite::Error::QueryReturnedNoRows) => {
-            entry.done = true;
+
+
+        Ok(None) => {
+
+            let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+
+            if let Some(entry) = stmts.get_mut(&stmt) {
+                entry.done = true;
+            }
+
+
+            log!("sqlite3_step SQLITE_DONE");
+
+
             SQLITE_DONE
         }
+
+
         Err(e) => {
-            log!("libsqlite3: sqlite3_step query execution error: {}", e);
+
+            log!(
+                "libsqlite3: rows.next error: {}",
+                e
+            );
+
+
             SQLITE_ERROR
         }
     }
