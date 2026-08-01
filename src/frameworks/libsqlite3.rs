@@ -258,15 +258,23 @@ pub fn sqlite3_prepare_v2(
         }
     }
 
-    // Validate SQL by trying to prepare it. Bind the temporary `Statement`
-    // to a local so it (and its borrow of the connection) is dropped before
-    // the `MutexGuard` at the end of the block.
-    let valid = {
+        // Validate SQL by trying to prepare it.
+    let mut valid = {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
         let conn = handles.get(&p_db).unwrap();
-        let ok = conn.prepare(&sql).is_ok();
-        ok
+        conn.prepare(&sql).is_ok()
     };
+
+    // CORREÇÃO REAL: Se for um comando estrutural do Unity (savepoint/PRAGMA), 
+    // forçamos o emulador a processá-lo diretamente na conexão real de banco de dados.
+    if !valid && (sql.contains("savepoint") || sql.contains("PRAGMA")) {
+        let handles = SQLITE_CONNECTIONS.lock().unwrap();
+        let conn = handles.get(&p_db).unwrap();
+        // Executa o comando de verdade no arquivo físico (.db)
+        if conn.execute_batch(&sql).is_ok() {
+            valid = true; 
+        }
+    }
 
     if !valid {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
