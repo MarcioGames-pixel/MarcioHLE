@@ -126,6 +126,33 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
 }
 
+- (bool)isEqualToSet:(id)other {
+    if other == nil {
+        return false;
+    }
+    if this == other {
+        return true;
+    }
+
+    let count_this: NSUInteger = msg![env; this count];
+    let count_other: NSUInteger = msg![env; other count];
+    if count_this != count_other {
+        return false;
+    }
+
+    let enumerator: id = msg![env; this objectEnumerator];
+    loop {
+        let next: id = msg![env; enumerator nextObject];
+        if next == nil {
+            break;
+        }
+        if !msg![env; other containsObject:next] {
+            return false;
+        }
+    }
+    true
+}
+    
 // Apple: "Sends a message specified by a given selector to each object in
 // the set." (NSSet makeObjectsPerformSelector:). The order in which the
 // objects receive the message is not defined.
