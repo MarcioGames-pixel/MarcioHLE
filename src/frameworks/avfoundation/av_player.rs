@@ -107,6 +107,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     2
 }
 
+// CORREÇÃO DA MORANGUINHO: Força a Unity a pular o vídeo e sair da tela preta
+- (id)duration {
+    nil
+}
+
 @end
 
 @implementation AVURLAsset: AVAsset
@@ -225,6 +230,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())addOutput:(id)_output {}
 - (())removeOutput:(id)_output {}
+
+// CORREÇÃO DA MORANGUINHO: Evita loop recursivo na inicialização da Unity
+- (id)duration {
+    nil
+}
 
 @end
 
