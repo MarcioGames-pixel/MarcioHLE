@@ -245,42 +245,36 @@ pub fn sqlite3_prepare_v2(
         &sql[..sql.len().min(120)]
     );
 
-    // Validate that this DB handle exists
+        // Validate SQL by trying to prepare it safely without locking references
+    let mut valid = false;
     {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        if !handles.contains_key(&p_db) {
-            set_error(p_db, "no such connection".into());
-            if pp_stmt != 0 {
-                let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
-                env.mem.write(p, 0u32);
+        if let Some(conn) = handles.get(&p_db) {
+            if conn.prepare(&sql).is_ok() {
+                valid = true;
             }
-            return SQLITE_ERROR;
         }
     }
 
-        // Validate SQL by trying to prepare it.
-    let mut valid = {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        let conn = handles.get(&p_db).unwrap();
-        conn.prepare(&sql).is_ok()
-    };
-
-    // CORREÇÃO REAL: Se for um comando estrutural do Unity (savepoint/PRAGMA), 
-    // forçamos o emulador a processá-lo diretamente na conexão real de banco de dados.
+    // CORREÇÃO REAL: Se falhar mas for um comando estrutural do Unity (savepoint/PRAGMA),
+    // executamos diretamente no banco de dados real para salvar as tabelas fisicamente.
     if !valid && (sql.contains("savepoint") || sql.contains("PRAGMA")) {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        let conn = handles.get(&p_db).unwrap();
-        // Executa o comando de verdade no arquivo físico (.db)
-        if conn.execute_batch(&sql).is_ok() {
-            valid = true; 
+        if let Some(conn) = handles.get(&p_db) {
+            if conn.execute_batch(&sql).is_ok() {
+                valid = true;
+            }
         }
     }
 
     if !valid {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
         let conn = handles.get(&p_db).unwrap();
-        let err = conn.prepare(&sql).unwrap_err();
-        let msg = format!("{}", err);
+        // Se a preparação falhar de verdade, tratamos o erro sem travar a compilação
+        let msg = match conn.prepare(&sql) {
+            Ok(_) => "Unknown SQLite evaluation mismatch".to_string(),
+            Err(err) => format!("{}", err),
+        };
         log!("libsqlite3: prepare error: {}", msg);
         set_error(p_db, msg);
         if pp_stmt != 0 {
