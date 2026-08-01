@@ -157,6 +157,18 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg_class![env; NSArray array]
 }
 
+// NOVO: Corrige o erro "does not respond to selector addMutableTrackWithMediaType..."
+- (id)addMutableTrackWithMediaType:(id)_media_type preferredTrackID:(i32)_track_id {
+    // Retorna nil ou um ID simulado. Retornar nil geralmente diz ao jogo que a faixa falhou,
+    // o que força o Unity a desistir do vídeo e ir direto para o jogo.
+    nil
+}
+
+// NOVO: Corrige o erro "does not respond to selector tracksWithMediaType..."
+- (id)tracksWithMediaType:(id)_media_type {
+    msg_class![env; NSArray array]
+}
+
 @end
     
 // ===========================================================================
