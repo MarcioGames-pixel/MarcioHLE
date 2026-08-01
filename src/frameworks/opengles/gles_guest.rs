@@ -14,8 +14,7 @@ use crate::objc::nil;
 use crate::Environment;
 use std::slice::from_raw_parts;
 use touchHLE_gl_bindings::gles11::{
-    ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER_BINDING, VERTEX_ARRAY_BUFFER_BINDING,
-    WRITE_ONLY_OES,
+    ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER_BINDING, WRITE_ONLY_OES,
 };
 
 use crate::gles::gles11_raw::types::{
@@ -424,7 +423,7 @@ fn glGetString(env: &mut Environment, name: GLenum) -> ConstPtr<GLubyte> {
             // desktop GL; reference it by numeric literal so we don't have
             // to pull in the ES 2.0 enum table here.
             0x8B8C => b"OpenGL ES GLSL ES 1.00",
-            gles11::EXTENSIONS => b"GL_APPLE_framebuffer_multisample GL_APPLE_texture_max_level GL_EXT_debug_label GL_EXT_discard_framebuffer GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_IMG_read_format GL_IMG_texture_compression_pvrtc GL_IMG_texture_format_BGRA8888 GL_OES_depth24 GL_OES_depth_texture GL_OES_packed_depth_stencil GL_OES_rgb8_rgba8 GL_OES_standard_derivatives GL_OES_texture_float GL_OES_texture_half_float GL_OES_vertex_array_object GL_OES_vertex_half_float ",
+            gles11::EXTENSIONS => b"GL_APPLE_framebuffer_multisample GL_APPLE_texture_max_level GL_EXT_debug_label GL_EXT_discard_framebuffer GL_EXT_occlusion_query_boolean GL_EXT_texture_filter_anisotropic GL_EXT_texture_lod_bias GL_IMG_read_format GL_IMG_texture_compression_pvrtc GL_IMG_texture_format_BGRA8888 GL_OES_depth24 GL_OES_depth_texture GL_OES_packed_depth_stencil GL_OES_rgb8_rgba8 GL_OES_standard_derivatives GL_OES_texture_float GL_OES_texture_half_float GL_OES_vertex_array_object GL_OES_vertex_half_float ",
             _ => b"Unknown",
         }
     };
@@ -450,6 +449,7 @@ fn glBlendFunc(env: &mut Environment, sfactor: GLenum, dfactor: GLenum) {
 fn glBlendEquationOES(env: &mut Environment, mode: GLenum) {
     with_ctx_and_mem(env, |gles, _mem| unsafe { gles.BlendEquationOES(mode) })
 }
+
 fn glColorMask(
     env: &mut Environment,
     red: GLboolean,
@@ -779,7 +779,7 @@ fn glBufferData(
     usage: GLenum,
 ) {
     with_ctx_and_mem(env, |gles, mem| unsafe {
-        let data = if data.is_null() {
+        let data: *const GLvoid = if data.is_null() {
             std::ptr::null()
         } else {
             mem.ptr_at(data.cast::<u8>(), size.try_into().unwrap())
@@ -1316,6 +1316,14 @@ unsafe fn guard_client_vertex_arrays(gles: &mut dyn GLES, mem: &Mem) -> Vec<GLui
         }
         let mut ptr: *mut GLvoid = std::ptr::null_mut();
         gles.GetVertexAttribPointerv(index, VERTEX_ATTRIB_ARRAY_POINTER, &mut ptr);
+        if ptr.is_null() {
+            // A null client pointer is the OpenGL default for an array that
+            // has not been populated yet. Keep the enabled array state intact:
+            // the fixed-function backend supplies its normal default attribute
+            // values, while disabling it changes the guest-visible state and
+            // can make later draws lose their vertex streams.
+            continue;
+        }
         if mem.is_host_ptr_in_guest_mem(ptr) {
             // A legitimate client-side array pointing into guest memory.
             continue;
@@ -2588,7 +2596,7 @@ fn glGenerateMipmap(env: &mut Environment, target: GLenum) {
 
 fn _get_currently_bound_buffer_object_name(env: &mut Environment, target: GLenum) -> GLuint {
     let binding = match target {
-        ARRAY_BUFFER => VERTEX_ARRAY_BUFFER_BINDING,
+        ARRAY_BUFFER => gles11::ARRAY_BUFFER_BINDING,
         ELEMENT_ARRAY_BUFFER => ELEMENT_ARRAY_BUFFER_BINDING,
         other => {
             // Anything else is a malformed call from the guest. Real GL
@@ -3322,6 +3330,10 @@ fn glVertexAttribPointer(
 }
 fn glVertexAttrib1f(env: &mut Environment, index: GLuint, x: GLfloat) {
     with_ctx_and_mem(env, |gles, _mem| unsafe { gles.VertexAttrib1f(index, x) });
+}
+fn glVertexAttrib1fv(env: &mut Environment, index: GLuint, values: ConstPtr<GLfloat>) {
+    let value = env.mem.read(values);
+    with_ctx_and_mem(env, |gles, _mem| unsafe { gles.VertexAttrib1fv(index, &value) });
 }
 fn glVertexAttrib2f(env: &mut Environment, index: GLuint, x: GLfloat, y: GLfloat) {
     with_ctx_and_mem(env, |gles, _mem| unsafe {
@@ -4279,6 +4291,44 @@ fn glGetQueryObjectuiv(env: &mut Environment, id: GLuint, pname: GLenum, params:
         let slice = mem.bytes_at_mut(params.cast(), 4);
         gles.GetQueryObjectuiv(id, pname, slice.as_mut_ptr().cast())
     });
+}
+
+// -- Boolean occlusion queries (GL_EXT_occlusion_query_boolean) --
+// The `*EXT` entry points are the OpenGL ES 2.0 form of the boolean occlusion
+// query API. They are semantically identical to the ES 3.0 core query objects
+// (only the accepted `target`s differ: GL_ANY_SAMPLES_PASSED_EXT and
+// GL_ANY_SAMPLES_PASSED_CONSERVATIVE_EXT), so each `*EXT` wrapper forwards to
+// the same backend trait method as its core counterpart. iPhone OS games such
+// as Rush Rally 2 link against these symbols directly, so they must be exported
+// or the dynamic linker leaves the guest's function pointer null and the app
+// jumps to a null address on launch.
+// Reference: https://registry.khronos.org/OpenGL/extensions/EXT/EXT_occlusion_query_boolean.txt
+fn glGenQueriesEXT(env: &mut Environment, n: GLsizei, ids: MutPtr<GLuint>) {
+    glGenQueries(env, n, ids)
+}
+
+fn glDeleteQueriesEXT(env: &mut Environment, n: GLsizei, ids: ConstPtr<GLuint>) {
+    glDeleteQueries(env, n, ids)
+}
+
+fn glIsQueryEXT(env: &mut Environment, id: GLuint) -> GLboolean {
+    glIsQuery(env, id)
+}
+
+fn glBeginQueryEXT(env: &mut Environment, target: GLenum, id: GLuint) {
+    glBeginQuery(env, target, id)
+}
+
+fn glEndQueryEXT(env: &mut Environment, target: GLenum) {
+    glEndQuery(env, target)
+}
+
+fn glGetQueryivEXT(env: &mut Environment, target: GLenum, pname: GLenum, params: MutPtr<GLint>) {
+    glGetQueryiv(env, target, pname, params)
+}
+
+fn glGetQueryObjectuivEXT(env: &mut Environment, id: GLuint, pname: GLenum, params: MutPtr<GLuint>) {
+    glGetQueryObjectuiv(env, id, pname, params)
 }
 
 // -- Sampler objects --
@@ -5364,6 +5414,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glDisableVertexAttribArray(_)),
     export_c_func!(glVertexAttribPointer(_, _, _, _, _, _)),
     export_c_func!(glVertexAttrib1f(_, _)),
+    export_c_func!(glVertexAttrib1fv(_, _)),
     export_c_func!(glVertexAttrib2f(_, _, _)),
     export_c_func!(glVertexAttrib3f(_, _, _, _)),
     export_c_func!(glVertexAttrib4f(_, _, _, _, _)),
@@ -5407,7 +5458,9 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glIsVertexArray(_)),
     // OpenGL ES 3.0 entry points
     export_c_func!(glUnmapBuffer(_)),
+    export_c_func_aliased!("glMapBufferRangeEXT", glMapBufferRange(_, _, _, _)),
     export_c_func!(glMapBufferRange(_, _, _, _)),
+    export_c_func_aliased!("glFlushMappedBufferRangeEXT", glFlushMappedBufferRange(_, _, _)),
     export_c_func!(glFlushMappedBufferRange(_, _, _)),
     export_c_func!(glCopyBufferSubData(_, _, _, _, _)),
     export_c_func!(glBindBufferBase(_, _, _)),
@@ -5439,6 +5492,14 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(glEndQuery(_)),
     export_c_func!(glGetQueryiv(_, _, _)),
     export_c_func!(glGetQueryObjectuiv(_, _, _)),
+    // GL_EXT_occlusion_query_boolean (OpenGL ES 2.0 boolean occlusion queries)
+    export_c_func!(glGenQueriesEXT(_, _)),
+    export_c_func!(glDeleteQueriesEXT(_, _)),
+    export_c_func!(glIsQueryEXT(_)),
+    export_c_func!(glBeginQueryEXT(_, _)),
+    export_c_func!(glEndQueryEXT(_)),
+    export_c_func!(glGetQueryivEXT(_, _, _)),
+    export_c_func!(glGetQueryObjectuivEXT(_, _, _)),
     export_c_func!(glGenSamplers(_, _)),
     export_c_func!(glDeleteSamplers(_, _)),
     export_c_func!(glIsSampler(_)),
