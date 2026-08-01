@@ -30,25 +30,27 @@ use crate::objc::{
 
 #[derive(Default)]
 struct AVAssetHostObject {
-    /// NSURL* the asset was created from (retained), or nil.
     url: id,
 }
 impl HostObject for AVAssetHostObject {}
 
 #[derive(Default)]
 struct AVPlayerItemHostObject {
-    /// AVAsset* (retained), or nil.
     asset: id,
 }
 impl HostObject for AVPlayerItemHostObject {}
 
 #[derive(Default)]
 struct AVPlayerHostObject {
-    /// Current AVPlayerItem* (retained), or nil.
     current_item: id,
     rate: f32,
 }
 impl HostObject for AVPlayerHostObject {}
+
+// Your new struct definition goes here:
+#[derive(Default)]
+struct AVMutableCompositionHostObject {}
+impl HostObject for AVMutableCompositionHostObject {}
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -130,6 +132,33 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 @end
 
+// ===========================================================================
+// AVMutableComposition
+// ===========================================================================
+
+@implementation AVMutableComposition: NSObject
+
++ (id)allocWithZone:(NSZonePtr)_zone {
+    let host = Box::new(AVMutableCompositionHostObject::default());
+    env.objc.alloc_object(this, host, &mut env.mem)
+}
+
++ (id)composition {
+    let new: id = msg![env; this alloc];
+    let new: id = msg![env; new init];
+    autorelease(env, new)
+}
+
+- (id)init {
+    msg_super![env; this init]
+}
+
+- (id)tracks {
+    msg_class![env; NSArray array]
+}
+
+@end
+    
 // ===========================================================================
 // AVPlayerItem
 // ===========================================================================
