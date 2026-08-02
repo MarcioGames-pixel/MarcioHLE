@@ -1426,19 +1426,20 @@ fn glDrawElements(
     with_ctx_and_mem(env, |gles, mem| unsafe {
         let disabled_arrays = guard_client_vertex_arrays(gles, mem);
         let fog_state_backup = clamp_fog_state_values(gles);
-        
-        // FIXED: Force clipping states to be disabled on Adreno GPUs
-        static SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-        if !SEEN.swap(true, std::sync::atomic::Ordering::Relaxed) {
-            log!(
-                "ADRENO FIXED: Disabling strict native GLES2 scissor/depth/cull state to resolve black screen."
-            );
-        }
+        if std::env::var_os("TOUCHHLE_POTATO_NATIVE_GLES2_PC_STATE").is_some() {
+            static SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !SEEN.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                log!(
+                    "TOUCHHLE_POTATO_NATIVE_GLES2_PC_STATE=1: disabling strict native GLES2 scissor/depth/cull state before Potato draws [this log will only be shown once]"
+                );
+            }
 
-        // Unconditionally disable these states so the Adreno GPU doesn't clip the Unity scene
-        gles.Disable(0x0c11); // GL_SCISSOR_TEST
-        gles.Disable(0x0b71); // GL_DEPTH_TEST
-        gles.Disable(0x0b44); // GL_CULL_FACE
+            // PC desktop GL path is more forgiving about stale/clipping state.
+            // Adreno native GLES2 can happily draw only a tiny clipped piece.
+            gles.Disable(0x0c11); // GL_SCISSOR_TEST
+            gles.Disable(0x0b71); // GL_DEPTH_TEST
+            gles.Disable(0x0b44); // GL_CULL_FACE
+        }
 
         let indices = translate_pointer_or_offset_to_host(
             gles,
@@ -1446,7 +1447,6 @@ fn glDrawElements(
             indices,
             gles11::ELEMENT_ARRAY_BUFFER_BINDING,
         );
-        
         gles.DrawElements(mode, count, type_, indices);
         restore_fog_state_values(gles, fog_state_backup);
         for index in disabled_arrays {
