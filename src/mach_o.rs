@@ -371,12 +371,18 @@ impl MachO {
             }
         };
 
-        if header.cputype != mach_object::CPU_TYPE_ARM {
+        if header.cputype != mach_object::CPU_TYPE_ARM
+            && header.cputype != mach_object::CPU_TYPE_ARM64
+        {
             return Err("Executable is not for an ARM CPU!");
         }
         log!(
             "Loading {} slice for {:?}",
-            cpu_subtype_to_str(header.cpusubtype),
+            if header.cputype == mach_object::CPU_TYPE_ARM64 {
+                "ARM64"
+            } else {
+                cpu_subtype_to_str(header.cpusubtype)
+            },
             name
         );
 
@@ -385,8 +391,10 @@ impl MachO {
             return Err("Executable is not little-endian!");
         }
         let is_64bit = header.is_64bit();
-        if is_64bit {
-            return Err("Executable is 64-bit; RadekHLE currently supports ARMv7 32-bit iOS apps only");
+        if header.cputype == mach_object::CPU_TYPE_ARM64 || is_64bit {
+            return Err(
+                "ARM64 executable detected, but the ARM64 runtime is not wired into Environment/dyld/Objective-C yet",
+            );
         }
         // TODO: Check cpusubtype (should be some flavour of ARMv6/ARMv7)
 
