@@ -20,10 +20,7 @@ pub struct Mem64 {
 
 impl Mem64 {
     pub fn new() -> Self {
-        Self {
-            next_allocation: 0x1_0000_0000,
-            ..Self::default()
-        }
+        Self { next_allocation: 0x1_0000_0000, ..Self::default() }
     }
 
     pub fn map_zeroed(&mut self, base: Guest64Addr, size: Guest64USize) -> Result<(), &'static str> {
@@ -42,9 +39,13 @@ impl Mem64 {
     }
 
     pub fn write_bytes(&mut self, base: Guest64Addr, bytes: &[u8]) -> Result<(), &'static str> {
-        let target = self.slice_mut(base, bytes.len())?;
-        target.copy_from_slice(bytes);
+        self.slice_mut(base, bytes.len())?.copy_from_slice(bytes);
         Ok(())
+    }
+
+    pub fn read_bytes(&self, base: Guest64Addr, size: Guest64USize) -> Result<Vec<u8>, &'static str> {
+        let size = usize::try_from(size).map_err(|_| "64-bit read is too large for this host")?;
+        Ok(self.slice(base, size)?.to_vec())
     }
 
     pub fn alloc_zeroed(&mut self, size: Guest64USize) -> Result<Guest64Addr, &'static str> {
@@ -52,16 +53,12 @@ impl Mem64 {
         let mut base = self.next_allocation.max(0x1_0000_0000);
         loop {
             let end = base.checked_add(size).ok_or("allocation address overflows")?;
-            let overlapping = self
-                .regions
-                .range(..end)
-                .next_back()
-                .and_then(|(&region_base, bytes)| {
-                    let region_end = region_base.checked_add(bytes.len() as u64)?;
-                    (region_end > base && region_base < end).then_some(region_end)
-                });
+            let overlapping = self.regions.range(..end).next_back().and_then(|(&region_base, bytes)| {
+                let region_end = region_base.checked_add(bytes.len() as u64)?;
+                (region_end > base && region_base < end).then_some(region_end)
+            });
             match overlapping {
-                Some(region_end) => base = (region_end + 15) & !15,
+                Some(region_end) => base = region_end.checked_add(15).ok_or("allocation address overflows")? & !15,
                 None => break,
             }
         }
@@ -95,7 +92,10 @@ impl Mem64 {
         let size = std::mem::size_of::<T>();
         let source = self.slice(addr, size)?;
         let mut value = std::mem::MaybeUninit::<T>::uninit();
-        unsafe { std::ptr::copy_nonoverlapping(source.as_ptr(), value.as_mut_ptr().cast(), size); Ok(value.assume_init()) }
+        unsafe {
+            std::ptr::copy_nonoverlapping(source.as_ptr(), value.as_mut_ptr().cast(), size);
+            Ok(value.assume_init())
+        }
     }
 
     pub fn write<T: SafeWrite>(&mut self, addr: Guest64Addr, value: T) -> Result<(), &'static str> {

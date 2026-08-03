@@ -392,9 +392,7 @@ impl MachO {
         }
         let is_64bit = header.is_64bit();
         if header.cputype == mach_object::CPU_TYPE_ARM64 || is_64bit {
-            return Err(
-                "ARM64 executable detected, but the ARM64 runtime is not wired into Environment/dyld/Objective-C yet",
-            );
+            return Err("ARM64 executable cannot be loaded by the 32-bit loader");
         }
         // TODO: Check cpusubtype (should be some flavour of ARMv6/ARMv7)
 
