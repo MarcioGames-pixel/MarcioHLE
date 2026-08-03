@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Cursor, Seek, SeekFrom};
 
-use mach_object::{Bind, BindSymbolType, LoadCommand, MachCommand, OFile, Rebase, Symbol, SymbolIter, ThreadState};
+use mach_object::{Bind, BindSymbolType, LazyBind, LoadCommand, MachCommand, OFile, Rebase, Symbol, SymbolIter, ThreadState, WeakBind};
 
 use crate::mem64::{Guest64Addr, Mem64};
 
@@ -136,6 +136,10 @@ impl MachO64 {
                     rebase_size,
                     bind_off,
                     bind_size,
+                    weak_bind_off,
+                    weak_bind_size,
+                    lazy_bind_off,
+                    lazy_bind_size,
                     ..
                 } => {
                     for rebased in Rebase::parse(command_bytes(bytes, rebase_off, rebase_size)?, 8) {
@@ -161,6 +165,27 @@ impl MachO64 {
                         let address = segment
                             .checked_add(bound.symbol_offset as u64)
                             .ok_or("ARM64 bind address overflows")?;
+                        bindings.push(Binding64 { address, symbol: bound.name });
+                    }
+                    for bound in WeakBind::parse(command_bytes(bytes, weak_bind_off, weak_bind_size)?, 8) {
+                        if bound.symbol_type != BindSymbolType::Pointer {
+                            continue;
+                        }
+                        let segment = *segment_bases
+                            .get(bound.segment_index)
+                            .ok_or("ARM64 weak bind references an invalid segment")?;
+                        let address = segment
+                            .checked_add(bound.symbol_offset as u64)
+                            .ok_or("ARM64 weak bind address overflows")?;
+                        bindings.push(Binding64 { address, symbol: bound.name });
+                    }
+                    for bound in LazyBind::parse(command_bytes(bytes, lazy_bind_off, lazy_bind_size)?, 8) {
+                        let segment = *segment_bases
+                            .get(bound.segment_index)
+                            .ok_or("ARM64 lazy bind references an invalid segment")?;
+                        let address = segment
+                            .checked_add(bound.symbol_offset as u64)
+                            .ok_or("ARM64 lazy bind address overflows")?;
                         bindings.push(Binding64 { address, symbol: bound.name });
                     }
                 }

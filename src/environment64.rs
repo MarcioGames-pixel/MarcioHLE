@@ -42,9 +42,6 @@ fn prepare_stack(mem: &mut Mem64, argv: &[String], envp: &[String], apple: &[Str
         apple_strings.push(put_string(mem, &mut cursor, value)?);
     }
     cursor &= !15;
-    let argv_ptr = cursor - ((argv.len() + 1) as u64 * 8);
-    let envp_ptr = argv_ptr - ((envp.len() + 1) as u64 * 8);
-    let apple_ptr = envp_ptr - ((apple.len() + 1) as u64 * 8);
     for value in argv_strings.iter().rev() {
         push_u64(mem, &mut cursor, *value)?;
     }
@@ -59,7 +56,18 @@ fn prepare_stack(mem: &mut Mem64, argv: &[String], envp: &[String], apple: &[Str
     push_u64(mem, &mut cursor, 0)?;
     cursor &= !15;
     let sp = cursor;
+    let argv_ptr = sp;
+    let envp_ptr = argv_ptr + ((argv.len() + 1) as u64 * 8);
+    let apple_ptr = envp_ptr + ((envp.len() + 1) as u64 * 8);
     Ok((sp, argv_ptr, envp_ptr, apple_ptr))
+}
+
+fn write_svc_stub(mem: &mut Mem64, svc: u32) -> Result<u64, String> {
+    let stub = mem.alloc_zeroed(8).map_err(str::to_owned)?;
+    let instruction = 0xd4000001u32 | ((u64::from(svc) << 5) as u32);
+    mem.write_u32(stub, instruction).map_err(str::to_owned)?;
+    mem.write_u32(stub + 4, 0xd65f03c0).map_err(str::to_owned)?;
+    Ok(stub)
 }
 
 pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> Result<(), String> {
@@ -67,11 +75,22 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     let executable = MachO64::load_from_file(&executable_path, &fs, 0)?;
     let entry = executable.entry_point_pc.ok_or("ARM64 Mach-O has no entry point")?;
     let mut memory = executable.memory;
-    let argv = std::iter::once(bundle.executable_path().as_str().to_owned())
+    let argv = std::iter::once(executable_path.as_str().to_owned())
         .chain(app_args)
         .collect::<Vec<_>>();
     let apple = vec![format!("executable_path={}", executable_path.as_str())];
     let (sp, argv_ptr, envp_ptr, apple_ptr) = prepare_stack(&mut memory, &argv, &[], &apple)?;
+
+    let return_stub = write_svc_stub(&mut memory, SVC_RETURN_TO_HOST)?;
+    let mut host_stubs = HashMap::new();
+    for binding in &executable.bindings {
+        let svc = SVC_HOST_BASE + host_stubs.len() as u32;
+        let stub = write_svc_stub(&mut memory, svc)?;
+        memory.write_u64(binding.address, stub).map_err(str::to_owned)?;
+        host_stubs.insert(svc as i32, binding.symbol.clone());
+    }
+
+    echo!("ARM64 runtime: entry point {:#x}, {} imported bindings, stack {:#x}", entry, host_stubs.len(), sp);
     let mut context = touchHLE_DynarmicA64Context::default();
     context.sp = sp;
     context.pc = entry;
@@ -79,43 +98,39 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     context.regs[1] = argv_ptr;
     context.regs[2] = envp_ptr;
     context.regs[3] = apple_ptr;
+    context.regs[30] = return_stub;
     let mut cpu = A64Cpu::new();
     cpu.swap_context(&mut context);
     let mut ticks = Some(100_000_u64);
-    let mut first_step = true;
-    let mut host_stubs = HashMap::new();
-    for binding in &executable.bindings {
-        let svc = SVC_HOST_BASE + host_stubs.len() as u32;
-        let stub = memory.alloc_zeroed(8).map_err(str::to_owned)?;
-        memory.write_u32(stub, 0xd4000001 | (u64::from(svc) << 5) as u32).map_err(str::to_owned)?;
-        memory.write_u32(stub + 4, 0xd65f03c0).map_err(str::to_owned)?;
-        memory.write_u64(binding.address, stub).map_err(str::to_owned)?;
-        host_stubs.insert(svc as i32, binding.symbol.clone());
-    }
+    let mut host_dispatches = 0_u64;
     loop {
         let result = cpu.run_or_step(&mut memory, ticks.as_mut());
         cpu.swap_context(&mut context);
         match result {
-            -1 => {
-                if first_step {
-                    return Err("ARM64 runtime stopped before executing the entry point".to_string());
-                }
-            }
+            -1 => {}
             -2 => return Err(format!("ARM64 guest memory fault at {:#x}", context.pc)),
             -3 => return Err(format!("ARM64 undefined instruction at {:#x}", context.pc)),
             -4 => return Err(format!("ARM64 breakpoint at {:#x}", context.pc)),
-            value if value == SVC_THREAD_EXIT as i32 || value == SVC_RETURN_TO_HOST as i32 => return Ok(()),
+            value if value == SVC_THREAD_EXIT as i32 || value == SVC_RETURN_TO_HOST as i32 => {
+                echo!("ARM64 runtime returned from entry point");
+                return Ok(());
+            }
             value if value >= SVC_HOST_BASE as i32 => {
-                if let Some(symbol) = host_stubs.get(&value) {
-                    log!("ARM64 host binding fallback for {}", symbol);
+                host_dispatches += 1;
+                let symbol = host_stubs.get(&value).map(String::as_str).unwrap_or("<unknown>");
+                if host_dispatches <= 32 {
+                    echo!("ARM64 host binding #{}: {}", host_dispatches, symbol);
+                }
+                if host_dispatches > 100_000 {
+                    return Err(format!("ARM64 runtime made too many host calls; last binding was {}", symbol));
                 }
                 context.pc = context.regs[30];
+                cpu.swap_context(&mut context);
                 continue;
             }
             value if value >= 0 => return Err(format!("ARM64 runtime reached unimplemented SVC {} at {:#x}", value, context.pc)),
             value => return Err(format!("ARM64 runtime failed with code {} at {:#x}", value, context.pc)),
         }
-        first_step = false;
         ticks = Some(100_000);
         let _ = &options;
     }
