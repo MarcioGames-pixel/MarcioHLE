@@ -93,7 +93,7 @@ extern "C" fn touchHLE_cpu_write_u64(mem: *mut touchHLE_Mem, addr: VAddr, value:
     touchHLE_cpu_write_impl(mem, addr, value)
 }
 
-fn touchHLE_cpu_read_64_impl<T: SafeRead + Default>(mem: *mut touchHLE_Mem, addr: u64, error: *mut bool) -> T {
+fn touchHLE_cpu_read_64_impl<T: SafeRead + Default + Copy>(mem: *mut touchHLE_Mem, addr: u64, error: *mut bool) -> T {
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mem = unsafe { &mut *mem.cast::<Mem64>() };
         mem.read(addr).unwrap_or_default()
