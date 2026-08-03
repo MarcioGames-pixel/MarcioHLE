@@ -123,8 +123,7 @@ public:
     cpu = std::make_unique<Dynarmic::A64::Jit>(config);
     env.cpu = cpu.get();
   }
-  void swap_context(touchHLE_DynarmicA64Context* c) {
-    touchHLE_DynarmicA64Context old{cpu->GetRegisters(), cpu->GetVectors(), cpu->GetSP(), cpu->GetPC(), cpu->GetPstate(), cpu->GetFpcr(), cpu->GetFpsr()};
+  void load_context(const touchHLE_DynarmicA64Context* c) {
     cpu->SetRegisters(c->regs);
     cpu->SetVectors(c->vectors);
     cpu->SetSP(c->sp);
@@ -132,6 +131,20 @@ public:
     cpu->SetPstate(c->pstate);
     cpu->SetFpcr(c->fpcr);
     cpu->SetFpsr(c->fpsr);
+  }
+  void save_context(touchHLE_DynarmicA64Context* c) const {
+    c->regs = cpu->GetRegisters();
+    c->vectors = cpu->GetVectors();
+    c->sp = cpu->GetSP();
+    c->pc = cpu->GetPC();
+    c->pstate = cpu->GetPstate();
+    c->fpcr = cpu->GetFpcr();
+    c->fpsr = cpu->GetFpsr();
+  }
+  void swap_context(touchHLE_DynarmicA64Context* c) {
+    touchHLE_DynarmicA64Context old{};
+    save_context(&old);
+    load_context(c);
     *c = old;
   }
   std::int32_t run_or_step(touchHLE_Mem* mem, std::uint64_t* ticks) {
@@ -159,6 +172,8 @@ extern "C" {
 DynarmicWrapper* touchHLE_DynarmicA64Wrapper_new() { return reinterpret_cast<DynarmicWrapper*>(new A64Wrapper()); }
 void touchHLE_DynarmicA64Wrapper_delete(DynarmicWrapper* p) { delete reinterpret_cast<A64Wrapper*>(p); }
 void touchHLE_DynarmicA64Wrapper_swap_context(DynarmicWrapper* p, touchHLE_DynarmicA64Context* c) { reinterpret_cast<A64Wrapper*>(p)->swap_context(c); }
+void touchHLE_DynarmicA64Wrapper_load_context(DynarmicWrapper* p, const touchHLE_DynarmicA64Context* c) { reinterpret_cast<A64Wrapper*>(p)->load_context(c); }
+void touchHLE_DynarmicA64Wrapper_save_context(DynarmicWrapper* p, touchHLE_DynarmicA64Context* c) { reinterpret_cast<A64Wrapper*>(p)->save_context(c); }
 std::int32_t touchHLE_DynarmicA64Wrapper_run_or_step(DynarmicWrapper* p, touchHLE_Mem* mem, std::uint64_t* ticks) { return reinterpret_cast<A64Wrapper*>(p)->run_or_step(mem, ticks); }
 }
 }

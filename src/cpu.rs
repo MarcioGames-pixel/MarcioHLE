@@ -385,6 +385,14 @@ impl A64Cpu {
         unsafe { touchHLE_DynarmicA64Wrapper_swap_context(self.dynarmic_wrapper, context) }
     }
 
+    pub fn load_context(&mut self, context: &touchHLE_DynarmicA64Context) {
+        unsafe { touchHLE_DynarmicA64Wrapper_load_context(self.dynarmic_wrapper, context) }
+    }
+
+    pub fn save_context(&mut self, context: &mut touchHLE_DynarmicA64Context) {
+        unsafe { touchHLE_DynarmicA64Wrapper_save_context(self.dynarmic_wrapper, context) }
+    }
+
     pub fn run_or_step(&mut self, mem: &mut Mem64, ticks: Option<&mut u64>) -> i32 {
         unsafe {
             touchHLE_DynarmicA64Wrapper_run_or_step(

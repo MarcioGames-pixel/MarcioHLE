@@ -111,6 +111,14 @@ extern "C" {
         cpu: *mut touchHLE_DynarmicWrapper,
         context: *mut touchHLE_DynarmicA64Context,
     );
+    pub fn touchHLE_DynarmicA64Wrapper_load_context(
+        cpu: *mut touchHLE_DynarmicWrapper,
+        context: *const touchHLE_DynarmicA64Context,
+    );
+    pub fn touchHLE_DynarmicA64Wrapper_save_context(
+        cpu: *mut touchHLE_DynarmicWrapper,
+        context: *mut touchHLE_DynarmicA64Context,
+    );
     pub fn touchHLE_DynarmicA64Wrapper_run_or_step(
         cpu: *mut touchHLE_DynarmicWrapper,
         mem: *mut touchHLE_Mem,

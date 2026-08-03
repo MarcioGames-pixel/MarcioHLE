@@ -100,14 +100,17 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     context.regs[3] = apple_ptr;
     context.regs[30] = return_stub;
     let mut cpu = A64Cpu::new();
-    cpu.swap_context(&mut context);
+    cpu.load_context(&context);
     let mut ticks = Some(100_000_u64);
     let mut host_dispatches = 0_u64;
     loop {
         let result = cpu.run_or_step(&mut memory, ticks.as_mut());
-        cpu.swap_context(&mut context);
+        cpu.save_context(&mut context);
         match result {
-            -1 => {}
+            -1 => {
+                ticks = Some(100_000);
+                continue;
+            }
             -2 => return Err(format!("ARM64 guest memory fault at {:#x}", context.pc)),
             -3 => return Err(format!("ARM64 undefined instruction at {:#x}", context.pc)),
             -4 => return Err(format!("ARM64 breakpoint at {:#x}", context.pc)),
@@ -125,7 +128,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                     return Err(format!("ARM64 runtime made too many host calls; last binding was {}", symbol));
                 }
                 context.pc = context.regs[30];
-                cpu.swap_context(&mut context);
+                cpu.load_context(&context);
                 continue;
             }
             value if value >= 0 => return Err(format!("ARM64 runtime reached unimplemented SVC {} at {:#x}", value, context.pc)),
