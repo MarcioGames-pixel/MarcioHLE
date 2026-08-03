@@ -93,20 +93,39 @@ extern "C" fn touchHLE_cpu_write_u64(mem: *mut touchHLE_Mem, addr: VAddr, value:
     touchHLE_cpu_write_impl(mem, addr, value)
 }
 
-fn touchHLE_cpu_read_64_impl<T: SafeRead + Default + Copy>(mem: *mut touchHLE_Mem, addr: u64, error: *mut bool) -> T {
+fn touchHLE_cpu_read_64_impl<T: SafeRead + Default + Copy>(
+    mem: *mut touchHLE_Mem,
+    addr: u64,
+    error: *mut bool,
+) -> T {
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mem = unsafe { &mut *mem.cast::<Mem64>() };
-        mem.read(addr).unwrap_or_default()
+        mem.read(addr)
     }));
-    unsafe { error.write(res.is_err()); }
-    res.unwrap_or_default()
+    match res {
+        Ok(Ok(value)) => {
+            unsafe { error.write(false) };
+            value
+        }
+        Ok(Err(_)) | Err(_) => {
+            unsafe { error.write(true) };
+            T::default()
+        }
+    }
 }
 
-fn touchHLE_cpu_write_64_impl<T: SafeWrite>(mem: *mut touchHLE_Mem, addr: u64, value: T) -> bool {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+fn touchHLE_cpu_write_64_impl<T: SafeWrite>(
+    mem: *mut touchHLE_Mem,
+    addr: u64,
+    value: T,
+) -> bool {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mem = unsafe { &mut *mem.cast::<Mem64>() };
         mem.write(addr, value)
-    })).is_err()
+    })) {
+        Ok(Ok(())) => false,
+        Ok(Err(_)) | Err(_) => true,
+    }
 }
 
 #[no_mangle]

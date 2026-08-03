@@ -15,10 +15,16 @@ pub struct Region {
 pub struct Mem64 {
     regions: BTreeMap<Guest64Addr, Vec<u8>>,
     allocations: BTreeMap<Guest64Addr, Guest64USize>,
+    next_allocation: Guest64Addr,
 }
 
 impl Mem64 {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self {
+            next_allocation: 0x1_0000_0000,
+            ..Self::default()
+        }
+    }
 
     pub fn map_zeroed(&mut self, base: Guest64Addr, size: Guest64USize) -> Result<(), &'static str> {
         let size_usize = usize::try_from(size).map_err(|_| "64-bit mapping is too large for this host")?;
@@ -43,11 +49,25 @@ impl Mem64 {
 
     pub fn alloc_zeroed(&mut self, size: Guest64USize) -> Result<Guest64Addr, &'static str> {
         let size = size.max(16).checked_add(15).ok_or("allocation size overflows")? & !15;
-        let base = self.allocations.last_key_value().map_or(0x1_0000_0000, |(base, size)| {
-            base.checked_add(*size).unwrap_or(0)
-        }).max(0x1_0000_0000);
+        let mut base = self.next_allocation.max(0x1_0000_0000);
+        loop {
+            let end = base.checked_add(size).ok_or("allocation address overflows")?;
+            let overlapping = self
+                .regions
+                .range(..end)
+                .next_back()
+                .and_then(|(&region_base, bytes)| {
+                    let region_end = region_base.checked_add(bytes.len() as u64)?;
+                    (region_end > base && region_base < end).then_some(region_end)
+                });
+            match overlapping {
+                Some(region_end) => base = (region_end + 15) & !15,
+                None => break,
+            }
+        }
         self.map_zeroed(base, size)?;
         self.allocations.insert(base, size);
+        self.next_allocation = base.checked_add(size).ok_or("allocation cursor overflows")?;
         Ok(base)
     }
 
@@ -98,5 +118,27 @@ impl Mem64 {
 
     pub fn mapped_regions(&self) -> impl Iterator<Item = Region> + '_ {
         self.regions.iter().map(|(&base, bytes)| Region { base, size: bytes.len() as u64 })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Mem64;
+
+    #[test]
+    fn allocations_skip_loaded_regions() {
+        let mut mem = Mem64::new();
+        mem.map_zeroed(0x1_0000_0000, 0x2000).unwrap();
+        let allocation = mem.alloc_zeroed(0x100).unwrap();
+        assert_eq!(allocation, 0x1_0000_2000);
+    }
+
+    #[test]
+    fn accesses_are_checked_at_region_boundaries() {
+        let mut mem = Mem64::new();
+        mem.map_zeroed(0x1_0000_0000, 0x10).unwrap();
+        assert!(mem.write_u64(0x1_0000_0008, 1).is_ok());
+        assert!(mem.write_u64(0x1_0000_0009, 1).is_err());
+        assert!(mem.read_u32(0x1_0000_000e).is_err());
     }
 }

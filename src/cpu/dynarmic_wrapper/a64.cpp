@@ -93,8 +93,15 @@ private:
     cpu->HaltExecution(HaltReasonUndefinedInstruction);
   }
   void CallSVC(std::uint32_t svc) override { halting_svc = svc; cpu->HaltExecution(HaltReasonSvc); }
-  void ExceptionRaised(VAddr, Dynarmic::A64::Exception e) override {
-    cpu->HaltExecution(e == Dynarmic::A64::Exception::Breakpoint ? HaltReasonBreakpoint : HaltReasonUndefinedInstruction);
+  void ExceptionRaised(VAddr pc, Dynarmic::A64::Exception e) override {
+    if (e == Dynarmic::A64::Exception::NoExecuteFault) {
+      cpu->HaltExecution(Dynarmic::HaltReason::MemoryAbort);
+    } else if (e == Dynarmic::A64::Exception::Breakpoint) {
+      cpu->HaltExecution(HaltReasonBreakpoint);
+    } else {
+      std::fprintf(stderr, "A64 exception %u at %llx\n", unsigned(e), static_cast<unsigned long long>(pc));
+      cpu->HaltExecution(HaltReasonUndefinedInstruction);
+    }
   }
   void AddTicks(std::uint64_t n) override { ticks_remaining = n > ticks_remaining ? 0 : ticks_remaining - n; }
   std::uint64_t GetTicksRemaining() override { return ticks_remaining; }
@@ -109,6 +116,8 @@ public:
   A64Wrapper() {
     Dynarmic::A64::UserConfig config;
     config.callbacks = &env;
+    config.check_halt_on_memory_access = true;
+    config.enable_cycle_counting = true;
     monitor = std::make_unique<Dynarmic::ExclusiveMonitor>(1);
     config.global_monitor = monitor.get();
     cpu = std::make_unique<Dynarmic::A64::Jit>(config);
