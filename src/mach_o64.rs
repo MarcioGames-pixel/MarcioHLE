@@ -21,6 +21,20 @@ pub struct MachO64 {
 }
 
 impl MachO64 {
+    pub fn load_from_file<P: AsRef<crate::fs::GuestPath>>(
+        path: P,
+        fs: &crate::fs::Fs,
+        slide: u64,
+    ) -> Result<Self, String> {
+        let name = path
+            .as_ref()
+            .file_name()
+            .ok_or("64-bit executable has no file name")?
+            .to_string();
+        let bytes = fs.read(path.as_ref()).map_err(|_| "Could not read 64-bit executable file")?;
+        Self::load_from_bytes(&bytes, name, slide)
+    }
+
     pub fn load_from_bytes(bytes: &[u8], name: impl Into<String>, slide: u64) -> Result<Self, String> {
         let name = name.into();
         let mut cursor = Cursor::new(bytes);

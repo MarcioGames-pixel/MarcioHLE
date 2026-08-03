@@ -127,6 +127,7 @@ public:
   }
   std::int32_t run_or_step(touchHLE_Mem* mem, std::uint64_t* ticks) {
     env.mem = mem;
+    env.halting_svc = 0;
     Dynarmic::HaltReason reason;
     if (ticks) {
       env.ticks_remaining = *ticks;

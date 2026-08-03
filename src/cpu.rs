@@ -12,6 +12,7 @@
 
 use crate::abi::GuestFunction;
 use crate::mem::{ConstPtr, GuestUSize, Mem, MutPtr, Ptr, SafeRead, SafeWrite};
+use crate::mem64::Mem64;
 
 // Import functions from C++
 use touchHLE_dynarmic_wrapper::*;
@@ -94,9 +95,8 @@ extern "C" fn touchHLE_cpu_write_u64(mem: *mut touchHLE_Mem, addr: VAddr, value:
 
 fn touchHLE_cpu_read_64_impl<T: SafeRead + Default>(mem: *mut touchHLE_Mem, addr: u64, error: *mut bool) -> T {
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mem = unsafe { &mut *mem.cast::<Mem>() };
-        let addr = u32::try_from(addr).expect("A64 guest address exceeds the current guest address space");
-        mem.read(Ptr::<T, false>::from_bits(addr.try_into().unwrap()))
+        let mem = unsafe { &mut *mem.cast::<Mem64>() };
+        mem.read(addr).unwrap_or_default()
     }));
     unsafe { error.write(res.is_err()); }
     res.unwrap_or_default()
@@ -104,9 +104,8 @@ fn touchHLE_cpu_read_64_impl<T: SafeRead + Default>(mem: *mut touchHLE_Mem, addr
 
 fn touchHLE_cpu_write_64_impl<T: SafeWrite>(mem: *mut touchHLE_Mem, addr: u64, value: T) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mem = unsafe { &mut *mem.cast::<Mem>() };
-        let addr = u32::try_from(addr).expect("A64 guest address exceeds the current guest address space");
-        mem.write(Ptr::from_bits(addr.try_into().unwrap()), value)
+        let mem = unsafe { &mut *mem.cast::<Mem64>() };
+        mem.write(addr, value)
     })).is_err()
 }
 
@@ -344,6 +343,12 @@ pub struct A64Cpu {
     dynarmic_wrapper: *mut touchHLE_DynarmicWrapper,
 }
 
+impl std::fmt::Debug for A64Cpu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("A64Cpu").finish_non_exhaustive()
+    }
+}
+
 impl Drop for A64Cpu {
     fn drop(&mut self) {
         unsafe { touchHLE_DynarmicA64Wrapper_delete(self.dynarmic_wrapper) }
@@ -361,7 +366,7 @@ impl A64Cpu {
         unsafe { touchHLE_DynarmicA64Wrapper_swap_context(self.dynarmic_wrapper, context) }
     }
 
-    pub fn run_or_step(&mut self, mem: &mut Mem, ticks: Option<&mut u64>) -> i32 {
+    pub fn run_or_step(&mut self, mem: &mut Mem64, ticks: Option<&mut u64>) -> i32 {
         unsafe {
             touchHLE_DynarmicA64Wrapper_run_or_step(
                 self.dynarmic_wrapper,
