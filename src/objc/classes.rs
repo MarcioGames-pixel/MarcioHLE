@@ -20,7 +20,8 @@ use crate::mach_o::MachO;
 use crate::mem::{
     guest_size_of, ConstPtr, ConstVoidPtr, GuestUSize, Mem, MutVoidPtr, Ptr, SafeRead,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque, HashSet};
+use std::sync::{Mutex, OnceLock};
 
 /// Generic pointer to an Objective-C class or metaclass.
 ///
@@ -454,10 +455,11 @@ fn substitute_classes(
         }
     }
 
-    log_once_fmt!(
-        "Note: substituting fake class for {} to improve compatibility",
-        name
-    );
+    static LOGGED_CLASSES: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let should_log = LOGGED_CLASSES.get_or_init(|| Mutex::new(HashSet::new())).lock().map(|mut set| set.insert(name.to_string())).unwrap_or(false);
+    if should_log {
+        log!("Note: substituting fake class for {} to improve compatibility", name);
+    }
     let class_host_object = Box::new(FakeClass {
         name: name.to_string(),
         is_metaclass: false,

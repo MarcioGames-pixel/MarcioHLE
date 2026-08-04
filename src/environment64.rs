@@ -133,6 +133,12 @@ pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> 
     }
 
     echo!("ARM64 runtime: entry point {:#x}, {} imported bindings, {} unresolved, stack {:#x}", entry, host_stubs.len(), unresolved.len(), sp);
+    for (i, binding) in executable.bindings.iter().take(16).enumerate() {
+        echo!("  {}: {} @ {:x} + {}", i, binding.symbol, binding.address, binding.addend);
+    }
+    if executable.bindings.len() > 16 {
+        echo!("  ... and {} more", executable.bindings.len() - 16);
+    }
     let mut context = touchHLE_DynarmicA64Context::default();
     context.sp = sp;
     context.pc = entry;
@@ -153,9 +159,9 @@ pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> 
                 ticks = Some(100_000);
                 continue;
             }
-            -2 => return Err(format!("ARM64 guest memory fault at {:#x}", context.pc)),
-            -3 => return Err(format!("ARM64 undefined instruction at {:#x}", context.pc)),
-            -4 => return Err(format!("ARM64 breakpoint at {:#x}", context.pc)),
+            -2 => return Err(format!("ARM64 guest memory fault at {:#x} (sp {:#x}, lr {:#x})", context.pc, context.sp, context.regs[30])),
+            -3 => return Err(format!("ARM64 undefined instruction at {:#x} (sp {:#x}, lr {:#x})", context.pc, context.sp, context.regs[30])),
+            -4 => return Err(format!("ARM64 breakpoint at {:#x} (sp {:#x}, lr {:#x})", context.pc, context.sp, context.regs[30])),
             value if value == SVC_THREAD_EXIT as i32 || value == SVC_RETURN_TO_HOST as i32 => {
                 echo!("ARM64 runtime returned from entry point");
                 return Ok(());

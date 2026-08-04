@@ -338,13 +338,10 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         };
         let major: u32 = major_str.parse().unwrap_or(0);
         let minor: u32 = minor_str.parse().unwrap_or(0);
-        // Apps targeting up to iOS 9.0 attempt to run silently. Only warn
-        // when the deployment target is beyond iOS 9, where breakage from
-        // missing post-iOS-9 APIs becomes the rule rather than the exception.
+        // Newer deployment targets can use APIs that are not implemented yet.
         if major > 9 || (major == 9 && minor > 0) {
             echo!(
-                "Warning: app requires OS version {}. touchHLE currently aims \
-                 for iOS 2.x–9.0; newer APIs may be missing.",
+                "Warning: app requires OS version {}. touchHLE compatibility is partial across iOS generations; APIs outside the implemented coverage may be missing.",
                 version
             );
         }

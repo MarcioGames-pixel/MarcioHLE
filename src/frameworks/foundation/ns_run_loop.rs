@@ -342,20 +342,6 @@ pub fn run_run_loop(
     single_iteration: bool,
     unix_time_limit: Option<f64>,
 ) {
-    if single_iteration {
-        log_dbg!(
-            "Entering run loop {:?} (single iteration), limit {:?}",
-            run_loop,
-            unix_time_limit
-        );
-    } else {
-        log_dbg!(
-            "Entering run loop {:?} (indefinitely), limit {:?}",
-            run_loop,
-            unix_time_limit
-        );
-    }
-
     // Temporary vectors used to track things without needing a reference to the
     // environment or to lock the object. Re-used each iteration for efficiency.
     let mut timers_tmp = Vec::new();
