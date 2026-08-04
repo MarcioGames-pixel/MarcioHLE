@@ -43,9 +43,36 @@ impl Mem64 {
         Ok(())
     }
 
+    pub fn fill_bytes(&mut self, base: Guest64Addr, value: u8, size: Guest64USize) -> Result<(), &'static str> {
+        let size = usize::try_from(size).map_err(|_| "64-bit fill is too large for this host")?;
+        self.slice_mut(base, size)?.fill(value);
+        Ok(())
+    }
+
+    pub fn copy_bytes(&mut self, destination: Guest64Addr, source: Guest64Addr, size: Guest64USize) -> Result<(), &'static str> {
+        let size = usize::try_from(size).map_err(|_| "64-bit copy is too large for this host")?;
+        let bytes = self.slice(source, size)?.to_vec();
+        self.slice_mut(destination, size)?.copy_from_slice(&bytes);
+        Ok(())
+    }
+
+    pub fn cstr_len(&self, base: Guest64Addr, limit: Guest64USize) -> Result<Guest64USize, &'static str> {
+        let limit = usize::try_from(limit).map_err(|_| "64-bit string limit is too large for this host")?;
+        for length in 0..limit {
+            if self.read_u8(base + length as u64)? == 0 {
+                return Ok(length as u64);
+            }
+        }
+        Err("64-bit string has no terminator within the safety limit")
+    }
+
     pub fn read_bytes(&self, base: Guest64Addr, size: Guest64USize) -> Result<Vec<u8>, &'static str> {
         let size = usize::try_from(size).map_err(|_| "64-bit read is too large for this host")?;
         Ok(self.slice(base, size)?.to_vec())
+    }
+
+    pub fn allocation_size(&self, address: Guest64Addr) -> Option<Guest64USize> {
+        self.allocations.get(&address).copied()
     }
 
     pub fn alloc_zeroed(&mut self, size: Guest64USize) -> Result<Guest64Addr, &'static str> {

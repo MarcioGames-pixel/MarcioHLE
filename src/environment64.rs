@@ -1,3 +1,4 @@
+use crate::a64_runtime::dispatch;
 use crate::bundle::Bundle;
 use crate::cpu::A64Cpu;
 use crate::fs::Fs;
@@ -12,6 +13,8 @@ const STACK_SIZE: u64 = 0x0010_0000;
 const SVC_THREAD_EXIT: u32 = 1;
 const SVC_RETURN_TO_HOST: u32 = 2;
 const SVC_HOST_BASE: u32 = 0x100;
+const HOST_STUB_SIZE: u64 = 8;
+const MAX_HOST_DISPATCHES: u64 = 1_000_000;
 const A64_HALT_USER_DEFINED1: u32 = 0x0100_0000;
 const A64_HALT_USER_DEFINED2: u32 = 0x0200_0000;
 const A64_HALT_USER_DEFINED3: u32 = 0x0400_0000;
@@ -24,53 +27,72 @@ fn put_string(mem: &mut Mem64, cursor: &mut u64, value: &str) -> Result<u64, Str
     Ok(*cursor)
 }
 
-fn push_u64(mem: &mut Mem64, cursor: &mut u64, value: u64) -> Result<(), String> {
-    *cursor = cursor.checked_sub(8).ok_or("ARM64 stack overflow")?;
-    mem.write_u64(*cursor, value).map_err(str::to_owned)
-}
-
-fn prepare_stack(mem: &mut Mem64, argv: &[String], envp: &[String], apple: &[String]) -> Result<(u64, u64, u64, u64), String> {
+fn prepare_stack(
+    mem: &mut Mem64,
+    argv: &[String],
+    envp: &[String],
+    apple: &[String],
+) -> Result<(u64, u64, u64, u64), String> {
     mem.map_zeroed(STACK_BASE - STACK_SIZE, STACK_SIZE).map_err(str::to_owned)?;
-    let mut cursor = STACK_BASE & !15;
+    let mut string_cursor = STACK_BASE & !15;
     let mut argv_strings = Vec::with_capacity(argv.len());
     let mut envp_strings = Vec::with_capacity(envp.len());
     let mut apple_strings = Vec::with_capacity(apple.len());
     for value in argv.iter().rev() {
-        argv_strings.push(put_string(mem, &mut cursor, value)?);
+        argv_strings.push(put_string(mem, &mut string_cursor, value)?);
     }
     for value in envp.iter().rev() {
-        envp_strings.push(put_string(mem, &mut cursor, value)?);
+        envp_strings.push(put_string(mem, &mut string_cursor, value)?);
     }
     for value in apple.iter().rev() {
-        apple_strings.push(put_string(mem, &mut cursor, value)?);
+        apple_strings.push(put_string(mem, &mut string_cursor, value)?);
     }
-    cursor &= !15;
-    for value in argv_strings.iter().rev() {
-        push_u64(mem, &mut cursor, *value)?;
-    }
-    push_u64(mem, &mut cursor, 0)?;
-    for value in envp_strings.iter().rev() {
-        push_u64(mem, &mut cursor, *value)?;
-    }
-    push_u64(mem, &mut cursor, 0)?;
-    for value in apple_strings.iter().rev() {
-        push_u64(mem, &mut cursor, *value)?;
-    }
-    push_u64(mem, &mut cursor, 0)?;
-    cursor &= !15;
-    let sp = cursor;
-    let argv_ptr = sp;
+    let pointer_count = argv.len() + envp.len() + apple.len() + 4;
+    let pointer_bytes = (pointer_count as u64)
+        .checked_mul(8)
+        .ok_or("ARM64 startup stack is too large")?;
+    let sp = (string_cursor & !15)
+        .checked_sub(pointer_bytes)
+        .ok_or("ARM64 stack overflow")?
+        & !15;
+    let argc = argv.len() as u64;
+    let argv_ptr = sp + 8;
     let envp_ptr = argv_ptr + ((argv.len() + 1) as u64 * 8);
     let apple_ptr = envp_ptr + ((envp.len() + 1) as u64 * 8);
+    let mut cursor = sp;
+    mem.write_u64(cursor, argc).map_err(str::to_owned)?;
+    cursor += 8;
+    for value in &argv_strings {
+        mem.write_u64(cursor, *value).map_err(str::to_owned)?;
+        cursor += 8;
+    }
+    mem.write_u64(cursor, 0).map_err(str::to_owned)?;
+    cursor += 8;
+    for value in &envp_strings {
+        mem.write_u64(cursor, *value).map_err(str::to_owned)?;
+        cursor += 8;
+    }
+    mem.write_u64(cursor, 0).map_err(str::to_owned)?;
+    cursor += 8;
+    for value in &apple_strings {
+        mem.write_u64(cursor, *value).map_err(str::to_owned)?;
+        cursor += 8;
+    }
+    mem.write_u64(cursor, 0).map_err(str::to_owned)?;
     Ok((sp, argv_ptr, envp_ptr, apple_ptr))
 }
 
 fn write_svc_stub(mem: &mut Mem64, svc: u32) -> Result<u64, String> {
-    let stub = mem.alloc_zeroed(8).map_err(str::to_owned)?;
+    let stub = mem.alloc_zeroed(HOST_STUB_SIZE).map_err(str::to_owned)?;
     let instruction = 0xd4000001u32 | ((u64::from(svc) << 5) as u32);
     mem.write_u32(stub, instruction).map_err(str::to_owned)?;
     mem.write_u32(stub + 4, 0xd65f03c0).map_err(str::to_owned)?;
     Ok(stub)
+}
+
+fn lookup_host_symbol(symbol: &str) -> Option<&'static str> {
+    crate::dyld::search_host_dylibs(|dylib| dylib.function_exports, symbol)
+        .map(|(name, _)| *name)
 }
 
 pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> Result<(), String> {
@@ -88,14 +110,23 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
 
     let return_stub = write_svc_stub(&mut memory, SVC_RETURN_TO_HOST)?;
     let mut host_stubs = HashMap::new();
+    let mut unresolved = Vec::new();
     for binding in &executable.bindings {
         let svc = SVC_HOST_BASE + host_stubs.len() as u32;
         let stub = write_svc_stub(&mut memory, svc)?;
-        memory.write_u64(binding.address, stub).map_err(str::to_owned)?;
-        host_stubs.insert(svc as i32, binding.symbol.clone());
+        let symbol = lookup_host_symbol(&binding.symbol)
+            .or_else(|| lookup_host_symbol(binding.symbol.strip_prefix('_').unwrap_or(&binding.symbol)))
+            .unwrap_or("<unimplemented>");
+        if symbol == "<unimplemented>" {
+            unresolved.push(binding.symbol.clone());
+        }
+        let target = stub;
+        let _ = binding.addend;
+        memory.write_u64(binding.address, target).map_err(str::to_owned)?;
+        host_stubs.insert(svc as i32, (binding.symbol.clone(), symbol));
     }
 
-    echo!("ARM64 runtime: entry point {:#x}, {} imported bindings, stack {:#x}", entry, host_stubs.len(), sp);
+    echo!("ARM64 runtime: entry point {:#x}, {} imported bindings, {} unresolved, stack {:#x}", entry, host_stubs.len(), unresolved.len(), sp);
     let mut context = touchHLE_DynarmicA64Context::default();
     context.sp = sp;
     context.pc = entry;
@@ -125,11 +156,15 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             }
             value if value >= SVC_HOST_BASE as i32 => {
                 host_dispatches += 1;
-                let symbol = host_stubs.get(&value).map(String::as_str).unwrap_or("<unknown>");
+                let symbol = host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>");
                 if host_dispatches <= 32 {
                     echo!("ARM64 host binding #{}: {}", host_dispatches, symbol);
                 }
-                if host_dispatches > 100_000 {
+                let handled = dispatch(&mut memory, &mut context, symbol)?;
+                if !handled {
+                    echo!("Warning: ARM64 host function {} is not implemented; returning zero", symbol);
+                }
+                if host_dispatches > MAX_HOST_DISPATCHES {
                     return Err(format!("ARM64 runtime made too many host calls; last binding was {}", symbol));
                 }
                 context.pc = context.regs[30];
@@ -143,6 +178,5 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             value => return Err(format!("ARM64 runtime failed with code {} at {:#x}", value, context.pc)),
         }
         ticks = Some(100_000);
-        let _ = &options;
     }
 }
