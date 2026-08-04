@@ -92,8 +92,8 @@ pub fn dispatch(
         }
         "memcmp" => {
             let size = context.regs[2] as usize;
-            let left = mem.read_bytes(context.regs[0], size).map_err(str::to_owned)?;
-            let right = mem.read_bytes(context.regs[1], size).map_err(str::to_owned)?;
+            let left = mem.read_bytes(context.regs[0], size as u64).map_err(str::to_owned)?;
+            let right = mem.read_bytes(context.regs[1], size as u64).map_err(str::to_owned)?;
             let result = left.iter().zip(right.iter()).find_map(|(a, b)| (a != b).then_some((*a as i32) - (*b as i32))).unwrap_or(0);
             return_value(context, result as i64 as u64);
             Ok(true)
