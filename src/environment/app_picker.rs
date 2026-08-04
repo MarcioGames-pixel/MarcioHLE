@@ -1315,7 +1315,8 @@ fn make_button_row(
         () = msg![env; button layoutSubviews];
 
         let label: id = msg![env; button titleLabel];
-        let font: id = msg_class![env; UIFont systemFontOfSize:font_size.unwrap_or(12.0) * ui_scale];
+        let scaled_font_size = font_size.unwrap_or(12.0) * ui_scale;
+        let font: id = msg_class![env; UIFont systemFontOfSize:scaled_font_size];
         () = msg![env; label setFont:font];
 
         let selector = env.objc.lookup_selector(selector).unwrap();
@@ -1641,7 +1642,8 @@ fn setup_quick_options(
         () = msg![env; button layoutSubviews];
 
         let label: id = msg![env; button titleLabel];
-        let font: id = msg_class![env; UIFont systemFontOfSize:23.0 * ui_scale];
+        let scaled_font_size = 23.0 * ui_scale;
+        let font: id = msg_class![env; UIFont systemFontOfSize:scaled_font_size];
         () = msg![env; label setFont:font];
 
         // `buttonWithType:UIButtonTypeRoundedRect` does not actually apply the
