@@ -454,7 +454,7 @@ fn substitute_classes(
         }
     }
 
-    log!(
+    log_once_fmt!(
         "Note: substituting fake class for {} to improve compatibility",
         name
     );

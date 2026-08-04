@@ -166,6 +166,10 @@ public:
     env.mem = nullptr;
     return result;
   }
+
+  void clear_halt(std::uint32_t reason) {
+    cpu->ClearHalt(static_cast<Dynarmic::HaltReason>(reason));
+  }
 };
 
 extern "C" {
@@ -175,5 +179,6 @@ void touchHLE_DynarmicA64Wrapper_swap_context(DynarmicWrapper* p, touchHLE_Dynar
 void touchHLE_DynarmicA64Wrapper_load_context(DynarmicWrapper* p, const touchHLE_DynarmicA64Context* c) { reinterpret_cast<A64Wrapper*>(p)->load_context(c); }
 void touchHLE_DynarmicA64Wrapper_save_context(DynarmicWrapper* p, touchHLE_DynarmicA64Context* c) { reinterpret_cast<A64Wrapper*>(p)->save_context(c); }
 std::int32_t touchHLE_DynarmicA64Wrapper_run_or_step(DynarmicWrapper* p, touchHLE_Mem* mem, std::uint64_t* ticks) { return reinterpret_cast<A64Wrapper*>(p)->run_or_step(mem, ticks); }
+void touchHLE_DynarmicA64Wrapper_clear_halt(DynarmicWrapper* p, std::uint32_t reason) { reinterpret_cast<A64Wrapper*>(p)->clear_halt(reason); }
 }
 }

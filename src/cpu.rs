@@ -402,4 +402,8 @@ impl A64Cpu {
             )
         }
     }
+
+    pub fn clear_halt(&mut self, reason: u32) {
+        unsafe { touchHLE_DynarmicA64Wrapper_clear_halt(self.dynarmic_wrapper, reason) }
+    }
 }

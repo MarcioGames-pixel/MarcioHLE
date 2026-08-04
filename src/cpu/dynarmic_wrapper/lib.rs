@@ -124,5 +124,9 @@ extern "C" {
         mem: *mut touchHLE_Mem,
         ticks: Option<&mut u64>,
     ) -> i32;
+    pub fn touchHLE_DynarmicA64Wrapper_clear_halt(
+        cpu: *mut touchHLE_DynarmicWrapper,
+        reason: u32,
+    );
 
 }

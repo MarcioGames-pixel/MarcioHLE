@@ -12,6 +12,9 @@ const STACK_SIZE: u64 = 0x0010_0000;
 const SVC_THREAD_EXIT: u32 = 1;
 const SVC_RETURN_TO_HOST: u32 = 2;
 const SVC_HOST_BASE: u32 = 0x100;
+const A64_HALT_USER_DEFINED1: u32 = 0x0100_0000;
+const A64_HALT_USER_DEFINED2: u32 = 0x0200_0000;
+const A64_HALT_USER_DEFINED3: u32 = 0x0400_0000;
 
 fn put_string(mem: &mut Mem64, cursor: &mut u64, value: &str) -> Result<u64, String> {
     let bytes = value.as_bytes();
@@ -74,6 +77,8 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     let executable_path = bundle.executable_path();
     let executable = MachO64::load_from_file(&executable_path, &fs, 0)?;
     let entry = executable.entry_point_pc.ok_or("ARM64 Mach-O has no entry point")?;
+    let image_end = executable.last_segment_end;
+    echo!("ARM64 image loaded: entry {:#x}, image range ends at {:#x}", entry, image_end);
     let mut memory = executable.memory;
     let argv = std::iter::once(executable_path.as_str().to_owned())
         .chain(app_args)
@@ -129,6 +134,9 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 }
                 context.pc = context.regs[30];
                 cpu.load_context(&context);
+                cpu.clear_halt(A64_HALT_USER_DEFINED1);
+                cpu.clear_halt(A64_HALT_USER_DEFINED2);
+                cpu.clear_halt(A64_HALT_USER_DEFINED3);
                 continue;
             }
             value if value >= 0 => return Err(format!("ARM64 runtime reached unimplemented SVC {} at {:#x}", value, context.pc)),

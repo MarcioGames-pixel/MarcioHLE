@@ -55,13 +55,18 @@ impl MachO64 {
         let name = name.into();
         let mut cursor = Cursor::new(bytes);
         let file = OFile::parse(&mut cursor).map_err(|e| format!("could not parse ARM64 Mach-O: {e}"))?;
-        let file = match file {
-            OFile::FatFile { files, .. } => files
-                .into_iter()
-                .find(|(arch, _)| arch.cputype == mach_object::CPU_TYPE_ARM64)
-                .map(|(_, file)| file)
-                .ok_or("fat binary has no ARM64 slice")?,
-            file => file,
+        let (image_bytes, file) = match file {
+            OFile::FatFile { files, .. } => {
+                let (arch, file) = files
+                    .into_iter()
+                    .find(|(arch, _)| arch.cputype == mach_object::CPU_TYPE_ARM64)
+                    .ok_or("fat binary has no ARM64 slice")?;
+                let start = usize::try_from(arch.offset).map_err(|_| "ARM64 fat slice offset is too large")?;
+                let length = usize::try_from(arch.size).map_err(|_| "ARM64 fat slice size is too large")?;
+                let end = start.checked_add(length).ok_or("ARM64 fat slice range overflows")?;
+                (bytes.get(start..end).ok_or("ARM64 fat slice extends past the file")?, file)
+            }
+            file => (bytes, file),
         };
         let (header, commands) = match file {
             OFile::MachFile { header, commands } => (header, commands),
@@ -115,7 +120,7 @@ impl MachO64 {
                         let start = usize::try_from(fileoff).map_err(|_| "segment file offset is too large")?;
                         let length = usize::try_from(filesize).map_err(|_| "segment file size is too large")?;
                         let end = start.checked_add(length).ok_or("segment file range overflows")?;
-                        let source = bytes.get(start..end).ok_or_else(|| format!("segment {segname} extends past the Mach-O file"))?;
+                        let source = image_bytes.get(start..end).ok_or_else(|| format!("segment {segname} extends past the Mach-O file"))?;
                         memory.write_bytes(base, source)?;
                     }
                     sections.extend(segment_sections);
@@ -142,7 +147,7 @@ impl MachO64 {
                     lazy_bind_size,
                     ..
                 } => {
-                    for rebased in Rebase::parse(command_bytes(bytes, rebase_off, rebase_size)?, 8) {
+                    for rebased in Rebase::parse(command_bytes(image_bytes, rebase_off, rebase_size)?, 8) {
                         if rebased.symbol_type != BindSymbolType::Pointer {
                             continue;
                         }
@@ -155,7 +160,7 @@ impl MachO64 {
                         let value = memory.read_u64(address)?;
                         memory.write_u64(address, value.checked_add(slide).ok_or("ARM64 rebase value overflows")?)?;
                     }
-                    for bound in Bind::parse(command_bytes(bytes, bind_off, bind_size)?, 8) {
+                    for bound in Bind::parse(command_bytes(image_bytes, bind_off, bind_size)?, 8) {
                         if bound.symbol_type != BindSymbolType::Pointer {
                             continue;
                         }
@@ -167,7 +172,7 @@ impl MachO64 {
                             .ok_or("ARM64 bind address overflows")?;
                         bindings.push(Binding64 { address, symbol: bound.name });
                     }
-                    for bound in WeakBind::parse(command_bytes(bytes, weak_bind_off, weak_bind_size)?, 8) {
+                    for bound in WeakBind::parse(command_bytes(image_bytes, weak_bind_off, weak_bind_size)?, 8) {
                         if bound.symbol_type != BindSymbolType::Pointer {
                             continue;
                         }
@@ -179,7 +184,7 @@ impl MachO64 {
                             .ok_or("ARM64 weak bind address overflows")?;
                         bindings.push(Binding64 { address, symbol: bound.name });
                     }
-                    for bound in LazyBind::parse(command_bytes(bytes, lazy_bind_off, lazy_bind_size)?, 8) {
+                    for bound in LazyBind::parse(command_bytes(image_bytes, lazy_bind_off, lazy_bind_size)?, 8) {
                         let segment = *segment_bases
                             .get(bound.segment_index)
                             .ok_or("ARM64 lazy bind references an invalid segment")?;
@@ -203,7 +208,7 @@ impl MachO64 {
         }
 
         if let Some((symoff, nsyms, stroff, strsize)) = symtab {
-            let mut symbols_cursor = cursor.clone();
+            let mut symbols_cursor = Cursor::new(image_bytes);
             symbols_cursor
                 .seek(SeekFrom::Start(symoff as u64))
                 .map_err(|_| "invalid symbol table offset")?;
