@@ -391,12 +391,12 @@ fn app_picker_inner(
     let window: id = msg![env; window initWithFrame:bounds];
 
     let app_frame: CGRect = msg![env; screen applicationFrame];
-    let app_frame_size = app_frame.size;
-    let ui_scale = picker_ui_scale(app_frame_size);
+    let CGSize { width: app_frame_width, height: app_frame_height } = app_frame.size;
+    let ui_scale = picker_ui_scale(app_frame.size);
     log!(
         "App picker layout: logical frame {:.0}x{:.0}, UI scale {:.2}",
-        app_frame_size.width,
-        app_frame_size.height,
+        app_frame_width,
+        app_frame_height,
         ui_scale
     );
     let main_view: id = msg_class![env; UIView alloc];
