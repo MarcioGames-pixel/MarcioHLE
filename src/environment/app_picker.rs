@@ -391,6 +391,13 @@ fn app_picker_inner(
     let window: id = msg![env; window initWithFrame:bounds];
 
     let app_frame: CGRect = msg![env; screen applicationFrame];
+    let ui_scale = picker_ui_scale(app_frame.size);
+    log!(
+        "App picker layout: logical frame {:.0}x{:.0}, UI scale {:.2}",
+        app_frame.size.width,
+        app_frame.size.height,
+        ui_scale
+    );
     let main_view: id = msg_class![env; UIView alloc];
     let main_view: id = msg![env; main_view initWithFrame:app_frame];
     () = msg![env; window addSubview:main_view];
@@ -497,7 +504,7 @@ fn app_picker_inner(
         );
         () = msg![env; label setText:text];
         () = msg![env; label setTextAlignment:UITextAlignmentRight];
-        let font_size: CGFloat = 12.0;
+        let font_size: CGFloat = 12.0 * ui_scale;
         let font: id = msg_class![env; UIFont systemFontOfSize:font_size];
         () = msg![env; label setFont:font];
         let text_color: id = if have_wallpaper {
@@ -992,6 +999,11 @@ const ICON_SIZE: CGSize = CGSize {
 };
 const ICON_IMAGE_INSET: CGFloat = 9.0;
 
+fn picker_ui_scale(size: CGSize) -> CGFloat {
+    let short_side = size.width.min(size.height);
+    (short_side / 320.0).clamp(1.0, 4.5)
+}
+
 enum TappedIcon {
     App(usize),
     ChangePage(usize),
@@ -1014,19 +1026,25 @@ fn make_icon_grid(
     total_app_count: usize,
     have_wallpaper: bool,
 ) -> IconGridStuff {
+    let ui_scale = picker_ui_scale(app_frame.size);
+    let short_side = app_frame.size.width.min(app_frame.size.height);
+    let icon_size = CGSize {
+        width: (short_side * 0.19).clamp(58.0, 112.0),
+        height: (short_side * 0.19).clamp(58.0, 112.0),
+    };
     let num_cols = 4;
     let num_cols_f = num_cols as CGFloat;
     let num_rows = 4;
     let label_size = CGSize {
-        width: 74.0,
-        height: 13.0,
+        width: (icon_size.width * 1.12).max(74.0),
+        height: (14.0 * ui_scale).max(14.0),
     };
-    let icon_gap_x: CGFloat = 12.0;
-    let icon_gap_y: CGFloat = 2.0 + label_size.height + 10.0;
-    let icon_grid_width = (ICON_SIZE.width * num_cols_f) + icon_gap_x * (num_cols_f - 1.0);
+    let icon_gap_x: CGFloat = (short_side * 0.028).clamp(8.0, 22.0);
+    let icon_gap_y: CGFloat = (short_side * 0.012).clamp(4.0, 12.0) + label_size.height;
+    let icon_grid_width = (icon_size.width * num_cols_f) + icon_gap_x * (num_cols_f - 1.0);
     let icon_grid_origin = CGPoint {
         x: (app_frame.size.width - icon_grid_width) / 2.0,
-        y: 12.0,
+        y: 12.0 * ui_scale,
     };
 
     let icon_tapped_sel = env.objc.lookup_selector("iconTapped:").unwrap();
@@ -1040,17 +1058,17 @@ fn make_icon_grid(
         // Rounding is needed here to avoid a blurry or offset image.
         let icon_frame = CGRect {
             origin: CGPoint {
-                x: (icon_grid_origin.x + (col as CGFloat) * (ICON_SIZE.width + icon_gap_x)).round(),
-                y: (icon_grid_origin.y + (row as CGFloat) * (ICON_SIZE.height + icon_gap_y))
+                x: (icon_grid_origin.x + (col as CGFloat) * (icon_size.width + icon_gap_x)).round(),
+                y: (icon_grid_origin.y + (row as CGFloat) * (icon_size.height + icon_gap_y))
                     .round(),
             },
-            size: ICON_SIZE,
+            size: icon_size,
         };
         let icon_button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
         () = msg![env; icon_button setFrame:icon_frame];
         let image_view: id = msg![env; icon_button imageView];
         let bounds: CGRect = msg![env; icon_button bounds];
-        let inset = ICON_IMAGE_INSET;
+        let inset = ICON_IMAGE_INSET * ui_scale;
         () = msg![env; image_view setFrame:(CGRect {
             origin: CGPoint { x: inset, y: inset },
             size: CGSize {
@@ -1069,15 +1087,15 @@ fn make_icon_grid(
         // Rounding is needed here to avoid blurry text.
         let label_frame = CGRect {
             origin: CGPoint {
-                x: (icon_frame.origin.x - (label_size.width - ICON_SIZE.width) / 2.0).round(),
-                y: (icon_frame.origin.y + ICON_SIZE.height + 4.0).round(),
+                x: (icon_frame.origin.x - (label_size.width - icon_size.width) / 2.0).round(),
+                y: (icon_frame.origin.y + icon_size.height + 4.0 * ui_scale).round(),
             },
             size: label_size,
         };
         let label: id = msg_class![env; UILabel alloc];
         let label: id = msg![env; label initWithFrame:label_frame];
         () = msg![env; label setTextAlignment:UITextAlignmentCenter];
-        let font_size: CGFloat = label_size.height - 2.0;
+        let font_size: CGFloat = (label_size.height - 2.0 * ui_scale).max(10.0);
         let font: id = if have_wallpaper {
             msg_class![env; UIFont systemFontOfSize:font_size]
         } else {
@@ -1272,11 +1290,12 @@ fn make_button_row(
     buttons: &[(&'static str, &'static str)],
     font_size: Option<CGFloat>,
 ) -> Vec<id> {
-    let margin = 6.0;
-
+    let ui_scale = picker_ui_scale(super_view_size);
+    let margin = 6.0 * ui_scale;
     let button_size = CGSize {
-        width: (super_view_size.width - margin) / (buttons.len() as CGFloat) - margin,
-        height: 22.0,
+        width: (super_view_size.width - margin * (buttons.len() as CGFloat + 1.0))
+            / buttons.len() as CGFloat,
+        height: 22.0 * ui_scale,
     };
     let mut button_frame = CGRect {
         origin: CGPoint {
@@ -1295,11 +1314,9 @@ fn make_button_row(
         // FIXME: manually calling layoutSubviews shouldn't be needed?
         () = msg![env; button layoutSubviews];
 
-        if let Some(font_size) = font_size {
-            let label: id = msg![env; button titleLabel];
-            let font: id = msg_class![env; UIFont systemFontOfSize:font_size];
-            () = msg![env; label setFont:font];
-        }
+        let label: id = msg![env; button titleLabel];
+        let font: id = msg_class![env; UIFont systemFontOfSize:font_size.unwrap_or(12.0) * ui_scale];
+        () = msg![env; label setFont:font];
 
         let selector = env.objc.lookup_selector(selector).unwrap();
         () = msg![env; button addTarget:delegate
@@ -1595,14 +1612,16 @@ fn setup_quick_options(
     () = msg![env; main_view setHidden:true];
     () = msg![env; super_view addSubview:main_view];
 
-    let divider = 42.0;
+    let ui_scale = picker_ui_scale(main_frame.size);
+    let divider = 42.0 * ui_scale;
 
     // Close button (×) in the upper right corner. It uses an explicit border
     // and a slightly larger frame than the title so the glyph is clearly
     // visible against the white menu background.
     {
-        let button_size: CGFloat = 30.0;
-        let button_margin: CGFloat = 6.0;
+        let ui_scale = picker_ui_scale(main_frame.size);
+        let button_size: CGFloat = 30.0 * ui_scale;
+        let button_margin: CGFloat = 6.0 * ui_scale;
         let button_frame = CGRect {
             origin: CGPoint {
                 x: main_frame.size.width - button_size - button_margin,
@@ -1622,7 +1641,7 @@ fn setup_quick_options(
         () = msg![env; button layoutSubviews];
 
         let label: id = msg![env; button titleLabel];
-        let font: id = msg_class![env; UIFont systemFontOfSize:(23.0 as CGFloat)];
+        let font: id = msg_class![env; UIFont systemFontOfSize:23.0 * ui_scale];
         () = msg![env; label setFont:font];
 
         // `buttonWithType:UIButtonTypeRoundedRect` does not actually apply the
@@ -1714,11 +1733,11 @@ fn setup_quick_options(
                 let frame = CGRect {
                     origin: CGPoint {
                         x: 0.0,
-                        y: row_center - 24.0 / 2.0,
+                        y: row_center - (24.0 * ui_scale) / 2.0,
                     },
                     size: CGSize {
                         width: main_frame.size.width,
-                        height: 24.0,
+                        height: 24.0 * ui_scale,
                     },
                 };
 
@@ -1768,8 +1787,8 @@ fn setup_quick_options(
             RowKind::Switch(selector, default_state) => {
                 let switch_frame = CGRect {
                     origin: CGPoint {
-                        x: main_frame.size.width / 2.0 - 94.0 / 2.0,
-                        y: row_center - 22.0 / 2.0,
+                        x: main_frame.size.width / 2.0 - (94.0 * ui_scale) / 2.0,
+                        y: row_center - (22.0 * ui_scale) / 2.0,
                     },
                     size: Default::default(),
                 };
@@ -1877,9 +1896,10 @@ fn make_ios_version_dropdown(
     super_view_size: CGSize,
     row_center: CGFloat,
 ) -> (id, id, Vec<id>) {
-    let button_width: CGFloat = 244.0;
-    let button_height: CGFloat = 22.0;
-    let item_height: CGFloat = 22.0;
+    let ui_scale = picker_ui_scale(super_view_size);
+    let button_width: CGFloat = (super_view_size.width * 0.52).clamp(220.0, 620.0);
+    let button_height: CGFloat = 22.0 * ui_scale;
+    let item_height: CGFloat = 22.0 * ui_scale;
     let button_frame = CGRect {
         origin: CGPoint {
             x: super_view_size.width / 2.0 - button_width / 2.0,
@@ -1952,10 +1972,11 @@ fn make_device_model_dropdown(
     super_view_size: CGSize,
     row_center: CGFloat,
 ) -> (id, id, Vec<id>, id) {
-    let btn_width: CGFloat = 244.0;
-    let btn_height: CGFloat = 22.0;
-    let list_width: CGFloat = 222.0;
-    let scrollbar_width: CGFloat = 22.0;
+    let ui_scale = picker_ui_scale(super_view_size);
+    let btn_width: CGFloat = (super_view_size.width * 0.52).clamp(220.0, 620.0);
+    let btn_height: CGFloat = 22.0 * ui_scale;
+    let scrollbar_width: CGFloat = 22.0 * ui_scale;
+    let list_width: CGFloat = btn_width - scrollbar_width;
 
     let btn_frame = CGRect {
         origin: CGPoint {
