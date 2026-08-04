@@ -458,7 +458,7 @@ fn substitute_classes(
     static LOGGED_CLASSES: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     let should_log = LOGGED_CLASSES.get_or_init(|| Mutex::new(HashSet::new())).lock().map(|mut set| set.insert(name.to_string())).unwrap_or(false);
     if should_log {
-        log!("Note: substituting fake class for {} to improve compatibility", name);
+        log!("Note: optional SDK class {} disabled; using a no-op compatibility class", name);
     }
     let class_host_object = Box::new(FakeClass {
         name: name.to_string(),

@@ -796,13 +796,6 @@ Type mismatch when sending message {} to {:?}!
             ) {
                 return;
             }
-            log!(
-                "Call to faked class \"{}\" ({:?}) {} method \"{}\". Behaving as if message was sent to nil.",
-                class_name_for_log,
-                class,
-                if is_metaclass { "class" } else { "instance" },
-                sel_name,
-            );
             env.cpu.regs_mut()[0..2].fill(0);
             return;
         } else {
