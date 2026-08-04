@@ -367,6 +367,13 @@ impl MachO64 {
             parse_chained_fixups(image_bytes, data, &segment_bases, &mut memory, &mut bindings, slide)?;
         }
 
+        bindings.sort_by_key(|binding| binding.address);
+        bindings.dedup_by(|left, right| {
+            left.address == right.address
+                && left.symbol == right.symbol
+                && left.addend == right.addend
+        });
+
         if let Some(entryoff) = entry_point_offset {
             entry_point_pc = Some(
                 text_base

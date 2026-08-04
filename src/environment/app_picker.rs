@@ -18,7 +18,7 @@ use crate::frameworks::foundation::ns_run_loop::run_run_loop_single_iteration;
 use crate::frameworks::foundation::ns_string;
 use crate::frameworks::foundation::NSInteger;
 use crate::frameworks::uikit::ui_font::{
-    UITextAlignmentCenter, UITextAlignmentLeft, UITextAlignmentRight,
+    UITextAlignmentCenter, UITextAlignmentRight,
 };
 use crate::frameworks::uikit::ui_graphics::{UIGraphicsPopContext, UIGraphicsPushContext};
 use crate::frameworks::uikit::ui_view::ui_control::ui_button::{
@@ -346,6 +346,20 @@ fn show_app_picker_gui(
                 );
         image
     };
+    let mut options = options;
+    if options.host_screen_size.is_none() {
+        if let Some((width, height)) = crate::window::host_screen_size() {
+            options.host_screen_size = Some((width, height));
+            log!("App picker: using host display resolution {}x{} for rendering.", width, height);
+        } else {
+            log!("App picker: host display resolution unavailable; using the emulated device resolution.");
+        }
+    }
+    let mut options = options;
+    if !options.fullscreen && !crate::window::Window::rotatable_fullscreen() {
+        options.fullscreen = true;
+        log!("App picker: enabling fullscreen so the picker uses the complete host display");
+    }
     let environment = Environment::new_without_app(options, icon)?;
     Ok(environment.run_app_picker(|env| app_picker_inner(env, apps)))
 }
@@ -417,8 +431,9 @@ fn app_picker_inner(
             },
             size: app_frame.size,
         })];
+        () = msg![env; wallpaper setContentMode:2];
         () = msg![env; wallpaper setAlpha:(1.0 as CGFloat)];
-        () = msg![env; main_view addSubview:wallpaper];
+        () = msg![env; main_view insertSubview:wallpaper atIndex:0];
         have_wallpaper = true;
         break;
     }
@@ -435,8 +450,9 @@ fn app_picker_inner(
                         origin: CGPoint { x: 0.0, y: 0.0 },
                         size: app_frame.size,
                     })];
+                    () = msg![env; wallpaper setContentMode:2];
                     () = msg![env; wallpaper setAlpha:(1.0 as CGFloat)];
-                    () = msg![env; main_view addSubview:wallpaper];
+                    () = msg![env; main_view insertSubview:wallpaper atIndex:0];
                     have_wallpaper = true;
                 }
             }

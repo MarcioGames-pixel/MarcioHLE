@@ -80,9 +80,12 @@ const CLASSES: ClassExports = objc_classes! {
 - (id)name { metal_string(env, "HyperHLE Metal compatibility device") }
 - (bool)hasUnifiedMemory { true }
 - (NSUInteger)recommendedMaxWorkingSetSize { 0 }
-- (bool)supportsFamily:(NSUInteger)_family { false }
-- (bool)supportsTextureSampleCount:(NSUInteger)count { count == 1 }
+- (bool)supportsFamily:(NSUInteger)_family { true }
+- (bool)supportsFeatureSet:(NSUInteger)_feature_set { true }
+- (bool)supportsTextureSampleCount:(NSUInteger)count { count == 1 || count == 2 || count == 4 }
 - (id)newCommandQueue { msg_class![env; MTLCommandQueue new] }
+- (id)defaultLibrary { nil }
+- (id)device { msg_class![env; MTLDevice new] }
 - (id)newCommandQueueWithMaxCommandBufferCount:(NSUInteger)_count { msg_class![env; MTLCommandQueue new] }
 - (id)newBufferWithLength:(NSUInteger)length options:(NSUInteger)options {
     let object = msg_class![env; MTLBuffer alloc];
@@ -141,7 +144,11 @@ const CLASSES: ClassExports = objc_classes! {
     env.objc.alloc_object(this, Box::new(MetalObjectHostObject::default()), &mut env.mem)
 }
 - (id)renderCommandEncoderWithDescriptor:(id)_descriptor { msg_class![env; MTLRenderCommandEncoder new] }
+- (id)blitCommandEncoder { msg_class![env; MTLBlitCommandEncoder new] }
+- (id)computeCommandEncoder { msg_class![env; MTLComputeCommandEncoder new] }
 - (())commit {}
+- (())addCompletedHandler:(id)_handler {}
+- (())addScheduledHandler:(id)_handler {}
 - (())waitUntilCompleted {}
 - (())presentDrawable:(id)_drawable {}
 - (NSUInteger)status { 0 }
@@ -227,6 +234,54 @@ const CLASSES: ClassExports = objc_classes! {
 
 @implementation MTLSamplerState: NSObject
 + (id)allocWithZone:(NSZonePtr)_zone { env.objc.alloc_object(this, Box::new(MetalObjectHostObject::default()), &mut env.mem) }
+@end
+
+@implementation MTLBlitCommandEncoder: NSObject
++ (id)allocWithZone:(NSZonePtr)_zone {
+    env.objc.alloc_object(this, Box::new(MetalObjectHostObject::default()), &mut env.mem)
+}
+- (())endEncoding {}
+- (())copyFromBuffer:(id)_source sourceOffset:(NSUInteger)_source_offset sourceBytesPerRow:(NSUInteger)_source_row sourceBytesPerImage:(NSUInteger)_source_image sourceSize:(id)_size toBuffer:(id)_destination destinationOffset:(NSUInteger)_destination_offset {}
+@end
+
+@implementation MTLComputeCommandEncoder: NSObject
++ (id)allocWithZone:(NSZonePtr)_zone {
+    env.objc.alloc_object(this, Box::new(MetalObjectHostObject::default()), &mut env.mem)
+}
+- (())endEncoding {}
+- (())setComputePipelineState:(id)_state {}
+- (())setBuffer:(id)_buffer offset:(NSUInteger)_offset atIndex:(NSUInteger)_index {}
+- (())dispatchThreadgroups:(id)_threadgroups threadsPerThreadgroup:(id)_threads {}
+@end
+
+@implementation MTLTextureDescriptor: NSObject
++ (id)allocWithZone:(NSZonePtr)_zone {
+    env.objc.alloc_object(this, Box::new(MetalObjectHostObject::default()), &mut env.mem)
+}
++ (id)texture2DDescriptorWithPixelFormat:(NSUInteger)format width:(NSUInteger)width height:(NSUInteger)height mipmapped:(bool)mipmapped {
+    let object = msg_class![env; MTLTextureDescriptor new];
+    let host = env.objc.borrow_mut::<MetalObjectHostObject>(object);
+    host.pixel_format = format;
+    host.width = width;
+    host.height = height;
+    host.depth = 1;
+    host.mipmap_level_count = if mipmapped { 0 } else { 1 };
+    host.sample_count = 1;
+    object
+}
+- (id)init { this }
+- (NSUInteger)pixelFormat { env.objc.borrow::<MetalObjectHostObject>(this).pixel_format }
+- (())setPixelFormat:(NSUInteger)value { env.objc.borrow_mut::<MetalObjectHostObject>(this).pixel_format = value }
+- (NSUInteger)width { env.objc.borrow::<MetalObjectHostObject>(this).width }
+- (())setWidth:(NSUInteger)value { env.objc.borrow_mut::<MetalObjectHostObject>(this).width = value }
+- (NSUInteger)height { env.objc.borrow::<MetalObjectHostObject>(this).height }
+- (())setHeight:(NSUInteger)value { env.objc.borrow_mut::<MetalObjectHostObject>(this).height = value }
+- (NSUInteger)depth { env.objc.borrow::<MetalObjectHostObject>(this).depth }
+- (())setDepth:(NSUInteger)value { env.objc.borrow_mut::<MetalObjectHostObject>(this).depth = value }
+- (NSUInteger)mipmapLevelCount { env.objc.borrow::<MetalObjectHostObject>(this).mipmap_level_count }
+- (())setMipmapLevelCount:(NSUInteger)value { env.objc.borrow_mut::<MetalObjectHostObject>(this).mipmap_level_count = value }
+- (NSUInteger)sampleCount { env.objc.borrow::<MetalObjectHostObject>(this).sample_count }
+- (())setSampleCount:(NSUInteger)value { env.objc.borrow_mut::<MetalObjectHostObject>(this).sample_count = value }
 @end
 
 };

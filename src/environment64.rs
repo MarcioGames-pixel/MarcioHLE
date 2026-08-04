@@ -95,7 +95,16 @@ fn lookup_host_symbol(symbol: &str) -> Option<&'static str> {
         .map(|(name, _)| *name)
 }
 
-pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> Result<(), String> {
+pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> Result<(), String> {
+    echo!(
+        "ARM64 launch configuration: device={:?}, orientation={:?}, fullscreen={}, screen={:?}, scale={:.2}, iOS={:?}",
+        options.device_family,
+        options.initial_orientation,
+        options.fullscreen,
+        options.host_screen_size,
+        options.scale_hack,
+        options.ios_version.unwrap_or(crate::options::LATEST_IOS_VERSION),
+    );
     let executable_path = bundle.executable_path();
     let executable = MachO64::load_from_file(&executable_path, &fs, 0)?;
     let entry = executable.entry_point_pc.ok_or("ARM64 Mach-O has no entry point")?;
@@ -132,7 +141,23 @@ pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> 
         memory.write_u64(binding.address, target).map_err(str::to_owned)?;
     }
 
-    echo!("ARM64 runtime: entry point {:#x}, {} imported bindings, {} unresolved, stack {:#x}", entry, host_stubs.len(), unresolved.len(), sp);
+    echo!(
+        "ARM64 runtime: entry point {:#x}, image_end {:#x}, {} bindings, {} unresolved, stack {:#x}, argv {:#x}, envp {:#x}, apple {:#x}",
+        entry,
+        image_end,
+        host_stubs.len(),
+        unresolved.len(),
+        sp,
+        argv_ptr,
+        envp_ptr,
+        apple_ptr,
+    );
+    for symbol in unresolved.iter().take(32) {
+        echo!("  unresolved import: {}", symbol);
+    }
+    if unresolved.len() > 32 {
+        echo!("  ... and {} more unresolved imports", unresolved.len() - 32);
+    }
     for (i, binding) in executable.bindings.iter().take(16).enumerate() {
         echo!("  {}: {} @ {:x} + {}", i, binding.symbol, binding.address, binding.addend);
     }
@@ -159,9 +184,42 @@ pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> 
                 ticks = Some(100_000);
                 continue;
             }
-            -2 => return Err(format!("ARM64 guest memory fault at {:#x} (sp {:#x}, lr {:#x})", context.pc, context.sp, context.regs[30])),
-            -3 => return Err(format!("ARM64 undefined instruction at {:#x} (sp {:#x}, lr {:#x})", context.pc, context.sp, context.regs[30])),
-            -4 => return Err(format!("ARM64 breakpoint at {:#x} (sp {:#x}, lr {:#x})", context.pc, context.sp, context.regs[30])),
+            -2 => {
+                return Err(format!(
+                    "ARM64 guest memory fault at pc {:#x}, sp {:#x}, lr {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
+                    context.pc,
+                    context.sp,
+                    context.regs[30],
+                    context.regs[0],
+                    context.regs[1],
+                    context.regs[2],
+                    context.regs[3],
+                ));
+            }
+            -3 => {
+                return Err(format!(
+                    "ARM64 undefined instruction at pc {:#x}, sp {:#x}, lr {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
+                    context.pc,
+                    context.sp,
+                    context.regs[30],
+                    context.regs[0],
+                    context.regs[1],
+                    context.regs[2],
+                    context.regs[3],
+                ));
+            }
+            -4 => {
+                return Err(format!(
+                    "ARM64 breakpoint at pc {:#x}, sp {:#x}, lr {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
+                    context.pc,
+                    context.sp,
+                    context.regs[30],
+                    context.regs[0],
+                    context.regs[1],
+                    context.regs[2],
+                    context.regs[3],
+                ));
+            }
             value if value == SVC_THREAD_EXIT as i32 || value == SVC_RETURN_TO_HOST as i32 => {
                 echo!("ARM64 runtime returned from entry point");
                 return Ok(());
@@ -169,8 +227,19 @@ pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> 
             value if value >= SVC_HOST_BASE as i32 => {
                 host_dispatches += 1;
                 let symbol = host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>");
-                if host_dispatches <= 32 {
-                    echo!("ARM64 host binding #{}: {}", host_dispatches, symbol);
+                if host_dispatches <= 128 {
+                    echo!(
+                        "ARM64 host binding #{}: {} pc={:#x} sp={:#x} lr={:#x} x0={:#x} x1={:#x} x2={:#x} x3={:#x}",
+                        host_dispatches,
+                        symbol,
+                        context.pc,
+                        context.sp,
+                        context.regs[30],
+                        context.regs[0],
+                        context.regs[1],
+                        context.regs[2],
+                        context.regs[3],
+                    );
                 }
                 let handled = dispatch(&mut memory, &mut context, symbol)?;
                 if !handled {
