@@ -59,11 +59,19 @@ impl Mem64 {
     pub fn cstr_len(&self, base: Guest64Addr, limit: Guest64USize) -> Result<Guest64USize, &'static str> {
         let limit = usize::try_from(limit).map_err(|_| "64-bit string limit is too large for this host")?;
         for length in 0..limit {
-            if self.read_u8(base + length as u64)? == 0 {
+            let address = base.checked_add(length as u64).ok_or("64-bit string address overflows")?;
+            if self.read_u8(address)? == 0 {
                 return Ok(length as u64);
             }
         }
         Err("64-bit string has no terminator within the safety limit")
+    }
+
+    pub fn free(&mut self, address: Guest64Addr) -> bool {
+        let Some(_) = self.allocations.remove(&address) else {
+            return false;
+        };
+        self.regions.remove(&address).is_some()
     }
 
     pub fn read_bytes(&self, base: Guest64Addr, size: Guest64USize) -> Result<Vec<u8>, &'static str> {
@@ -167,5 +175,14 @@ mod tests {
         assert!(mem.write_u64(0x1_0000_0008, 1).is_ok());
         assert!(mem.write_u64(0x1_0000_0009, 1).is_err());
         assert!(mem.read_u32(0x1_0000_000e).is_err());
+    }
+
+    #[test]
+    fn free_releases_only_emulator_allocations() {
+        let mut mem = Mem64::new();
+        let address = mem.alloc_zeroed(32).unwrap();
+        assert!(mem.free(address));
+        assert!(mem.read_u8(address).is_err());
+        assert!(!mem.free(address));
     }
 }

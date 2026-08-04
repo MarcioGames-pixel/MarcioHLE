@@ -1901,7 +1901,7 @@ fn make_ios_version_dropdown(
     () = msg![env; super_view addSubview:menu];
 
     let entries = [
-        ("Latest (iOS 12.0)", "iosVersionLatest", 0i32),
+        ("Latest (iOS 12.4.1)", "iosVersionLatest", 0i32),
         ("iOS 4.3", "iosVersion43", 1i32),
         ("iOS 6.1", "iosVersion61", 2i32),
         ("iOS 9.3", "iosVersion93", 3i32),

@@ -442,6 +442,32 @@ pub const CLASSES: ClassExports = objc_classes! {
         .borrow::<UIViewControllerHostObject>(this)
         .edges_for_extended_layout
 }
+// iOS 11 safe-area APIs. touchHLE has no notch or system-bar insets, so the
+// safe area is the view's bounds and the guide is a zero-behaviour layout
+// guide that remains available for feature detection and storyboard code.
+- (id)safeAreaLayoutGuide {
+    let existing = env.objc.borrow::<UIViewControllerHostObject>(this).view;
+    if existing == nil {
+        return nil;
+    }
+    msg![env; existing safeAreaLayoutGuide]
+}
+
+- (crate::frameworks::core_graphics::CGRect)viewSafeAreaInsets {
+    crate::frameworks::core_graphics::CGRect::default()
+}
+
+- (())viewSafeAreaInsetsDidChange {
+    log_dbg!("[(UIViewController*){:?} viewSafeAreaInsetsDidChange]", this);
+}
+
+- (bool)prefersHomeIndicatorAutoHidden {
+    false
+}
+
+- (bool)prefersStatusBarHidden {
+    false
+}
 
 - (())dismissModalViewControllerAnimated:(bool)animated {
     // Apple docs: "If you call this method on the modal view controller

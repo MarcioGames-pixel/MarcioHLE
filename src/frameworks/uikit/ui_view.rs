@@ -28,16 +28,45 @@ use super::ui_graphics::{UIGraphicsPopContext, UIGraphicsPushContext};
 use crate::frameworks::core_graphics::cg_affine_transform::CGAffineTransform;
 use crate::frameworks::core_graphics::cg_color::CGColorRef;
 use crate::frameworks::core_graphics::cg_context::{CGContextClearRect, CGContextRef};
+use crate::abi::{GuestArg, GuestRet};
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect, CGSize};
 use crate::frameworks::foundation::ns_dictionary::dict_from_keys_and_objects;
 use crate::frameworks::foundation::ns_string::{from_rust_string, get_static_str, to_rust_string};
 use crate::frameworks::foundation::{ns_array, NSInteger, NSUInteger};
-use crate::mem::MutPtr;
+use crate::mem::{MutPtr, SafeRead};
 use crate::objc::{
     autorelease, id, msg, msg_class, msg_send_no_type_checking, nil, objc_classes, release, retain,
     Class, ClassExports, HostObject, NSZonePtr, ObjC, SEL,
 };
 use crate::Environment;
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C, packed)]
+struct UIEdgeInsets {
+    top: CGFloat,
+    left: CGFloat,
+    bottom: CGFloat,
+    right: CGFloat,
+}
+unsafe impl SafeRead for UIEdgeInsets {}
+impl GuestRet for UIEdgeInsets {}
+impl GuestArg for UIEdgeInsets {
+    const REG_COUNT: usize = 4;
+    fn from_regs(regs: &[u32]) -> Self {
+        Self {
+            top: GuestArg::from_regs(&regs[0..1]),
+            left: GuestArg::from_regs(&regs[1..2]),
+            bottom: GuestArg::from_regs(&regs[2..3]),
+            right: GuestArg::from_regs(&regs[3..4]),
+        }
+    }
+    fn to_regs(self, regs: &mut [u32]) {
+        GuestArg::to_regs(self.top, &mut regs[0..1]);
+        GuestArg::to_regs(self.left, &mut regs[1..2]);
+        GuestArg::to_regs(self.bottom, &mut regs[2..3]);
+        GuestArg::to_regs(self.right, &mut regs[3..4]);
+    }
+}
 
 /// State maintained for UIView's class-level animation block API
 /// (`+beginAnimations:context:` ... `+commitAnimations`). At most one block
@@ -102,6 +131,8 @@ pub(crate) struct UIViewHostObject {
     is_animating: bool,
     clips_to_bounds: bool,
     is_uncontrolled: bool,
+    /// Lazily-created iOS 11 safe-area layout guide.
+    safe_area_layout_guide: id,
     /// Strong refs to attached `UIGestureRecognizer*` instances. Used by
     /// `addGestureRecognizer:` / `removeGestureRecognizer:` /
     /// `gestureRecognizers`. We don't dispatch real gesture recognition;
@@ -158,6 +189,7 @@ impl Default for UIViewHostObject {
             clips_to_bounds: false,
             is_uncontrolled: false,
             gesture_recognizers: Vec::new(),
+            safe_area_layout_guide: nil,
             is_accessibility_element: false,
             accessibility_traits: 0,
             accessibility_label: nil,
@@ -1186,6 +1218,24 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     let array = ns_array::from_vec(env, recognizers);
     autorelease(env, array)
+}
+// iOS 11 safe-area API. The emulator has no notch or system bars, so the
+// effective insets are zero. Returning a real UILayoutGuide object keeps
+// modern layouts and storyboard-generated code on the supported path.
+- (id)safeAreaLayoutGuide {
+    let existing = env.objc.borrow::<UIViewHostObject>(this).safe_area_layout_guide;
+    if existing != nil {
+        return existing;
+    }
+    let guide_class = env.objc.get_known_class("UILayoutGuide", &mut env.mem);
+    let guide: id = msg![env; guide_class new];
+    () = msg![env; guide setOwningView:this];
+    env.objc.borrow_mut::<UIViewHostObject>(this).safe_area_layout_guide = guide;
+    guide
+}
+
+- (UIEdgeInsets)safeAreaInsets {
+    UIEdgeInsets::default()
 }
 
 - (())setGestureRecognizers:(id)recognizers { // NSArray*

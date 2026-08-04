@@ -95,7 +95,7 @@ fn lookup_host_symbol(symbol: &str) -> Option<&'static str> {
         .map(|(name, _)| *name)
 }
 
-pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> Result<(), String> {
+pub fn run(bundle: Bundle, fs: Fs, _options: Options, app_args: Vec<String>) -> Result<(), String> {
     let executable_path = bundle.executable_path();
     let executable = MachO64::load_from_file(&executable_path, &fs, 0)?;
     let entry = executable.entry_point_pc.ok_or("ARM64 Mach-O has no entry point")?;
@@ -110,20 +110,26 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
 
     let return_stub = write_svc_stub(&mut memory, SVC_RETURN_TO_HOST)?;
     let mut host_stubs = HashMap::new();
+    let mut stub_by_symbol = HashMap::new();
     let mut unresolved = Vec::new();
     for binding in &executable.bindings {
-        let svc = SVC_HOST_BASE + host_stubs.len() as u32;
-        let stub = write_svc_stub(&mut memory, svc)?;
         let symbol = lookup_host_symbol(&binding.symbol)
             .or_else(|| lookup_host_symbol(binding.symbol.strip_prefix('_').unwrap_or(&binding.symbol)))
             .unwrap_or("<unimplemented>");
         if symbol == "<unimplemented>" {
             unresolved.push(binding.symbol.clone());
         }
-        let target = stub;
-        let _ = binding.addend;
+        let (svc, stub) = if let Some(&(svc, stub)) = stub_by_symbol.get(symbol) {
+            (svc, stub)
+        } else {
+            let svc = SVC_HOST_BASE + host_stubs.len() as u32;
+            let stub = write_svc_stub(&mut memory, svc)?;
+            stub_by_symbol.insert(symbol, (svc, stub));
+            host_stubs.insert(svc as i32, (binding.symbol.clone(), symbol));
+            (svc, stub)
+        };
+        let target = stub.checked_add(binding.addend as u64).ok_or("ARM64 import target overflows")?;
         memory.write_u64(binding.address, target).map_err(str::to_owned)?;
-        host_stubs.insert(svc as i32, (binding.symbol.clone(), symbol));
     }
 
     echo!("ARM64 runtime: entry point {:#x}, {} imported bindings, {} unresolved, stack {:#x}", entry, host_stubs.len(), unresolved.len(), sp);
@@ -177,6 +183,5 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             value if value >= 0 => return Err(format!("ARM64 runtime reached unimplemented SVC {} at {:#x}", value, context.pc)),
             value => return Err(format!("ARM64 runtime failed with code {} at {:#x}", value, context.pc)),
         }
-        ticks = Some(100_000);
     }
 }

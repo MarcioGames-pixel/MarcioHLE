@@ -32,7 +32,7 @@ pub enum Button {
 }
 
 /// Highest iOS version currently exposed by the emulator compatibility layer.
-pub const LATEST_IOS_VERSION: (i32, i32, i32) = (12, 0, 0);
+pub const LATEST_IOS_VERSION: (i32, i32, i32) = (12, 4, 1);
 
 /// Struct containing all user-configurable options.
 #[derive(Clone)]
