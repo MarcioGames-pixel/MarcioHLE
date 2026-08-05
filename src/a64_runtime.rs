@@ -108,9 +108,12 @@ fn objc_string(mem: &mut Mem64, value: &str) -> Result<u64, String> {
 
 fn objc_bundle(mem: &mut Mem64) -> Result<u64, String> {
     let object = objc_object(mem, A64_KIND_BUNDLE)?;
-    set_objc_field(mem, object, 56, objc_string(mem, "/")?);
-    set_objc_field(mem, object, 64, objc_string(mem, "com.snowman.altos-odyssey")?);
-    set_objc_field(mem, object, 72, objc_string(mem, "Odyssey")?);
+    let path = objc_string(mem, "/")?;
+    let identifier = objc_string(mem, "com.snowman.altos-odyssey")?;
+    let name = objc_string(mem, "Odyssey")?;
+    set_objc_field(mem, object, 56, path);
+    set_objc_field(mem, object, 64, identifier);
+    set_objc_field(mem, object, 72, name);
     Ok(object)
 }
 
