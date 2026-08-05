@@ -155,6 +155,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         entry,
         image_end,
         host_stubs.len(),
+        materialized_imports,
         unresolved.len(),
         sp,
         argv_ptr,
