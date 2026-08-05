@@ -818,6 +818,7 @@ impl Window {
         launch_image: Option<(Image, bool)>,
         options: &Options,
     ) -> Window {
+        crate::gles::configure_angle_driver(options.angle_driver);
         let sdl_ctx = sdl2::init().unwrap();
         let video_ctx = sdl_ctx.video().unwrap();
 
@@ -979,7 +980,7 @@ impl Window {
         // (see src/frameworks/core_animation/composition.rs). OpenGL ES is used
         // because SDL2 won't let us use more than one graphics API in the same
         // window, and we also need OpenGL ES for the app's own rendering.
-        let mut gl_ins = if options.prefer_gles2_context {
+        let mut gl_ins = if options.prefer_gles2_context || options.angle_driver {
             create_gles2_ctx_no_parent_stack(&mut window)
         } else {
             create_gles1_ctx_no_parent_stack(&mut window, options)

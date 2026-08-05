@@ -249,10 +249,14 @@ Graphics driver options:
 
 Debugging options:
     --angle-driver
-        Use the Angle driver for OpenGL ES.
+        Prefer ANGLE's EGL/GLES loader for OpenGL ES. The packaged build must
+        provide ANGLE libraries and may override their paths with the
+        TOUCHHLE_ANGLE_EGL and TOUCHHLE_ANGLE_GLES environment variables.
+        If no ANGLE libraries are available, touchHLE keeps using the host
+        loader and records that fact in the log instead of pretending ANGLE is active.
 
     --disable-angle-driver
-        Disable the Angle driver for OpenGL ES.
+        Disable the ANGLE driver override and use the normal host OpenGL ES driver.
 
     --enable-log-file
         Enable logging to a file.

@@ -75,12 +75,17 @@ const kEAGLRenderingAPIOpenGLES3: EAGLRenderingAPI = 3;
 /// rendering with shader entry points (`glUseProgram`, `glCreateShader`, …)
 /// route through the real native ES 2.0 backend instead of falling through
 /// to the GLES 1.1-only stubs in `gles_generic`.
-fn effective_eagl_api(requested: EAGLRenderingAPI, prefer_gles2_context: bool) -> EAGLRenderingAPI {
-    if prefer_gles2_context && requested == kEAGLRenderingAPIOpenGLES1 {
+fn effective_eagl_api(
+    requested: EAGLRenderingAPI,
+    prefer_gles2_context: bool,
+    angle_driver: bool,
+) -> EAGLRenderingAPI {
+    if (prefer_gles2_context || angle_driver) && requested == kEAGLRenderingAPIOpenGLES1 {
         log!(
-            "EAGL: --prefer-gles2-context active, upgrading initWithAPI:{} \
-             (kEAGLRenderingAPIOpenGLES1) to kEAGLRenderingAPIOpenGLES2",
-            requested
+            "EAGL: upgrading initWithAPI:{} to OpenGL ES 2.0 (prefer_gles2_context={}, angle_driver={})",
+            requested,
+            prefer_gles2_context,
+            angle_driver
         );
         return kEAGLRenderingAPIOpenGLES2;
     }
@@ -172,7 +177,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     env.window.as_mut().unwrap().set_share_with_current_context(true);
 
-    let effective_api = effective_eagl_api(api, env.options.prefer_gles2_context);
+    let effective_api = effective_eagl_api(
+        api,
+        env.options.prefer_gles2_context,
+        env.options.angle_driver,
+    );
 
     let mut gles_ins = match effective_api {
         kEAGLRenderingAPIOpenGLES3 => create_gles3_ctx(env),
@@ -207,7 +216,11 @@ pub const CLASSES: ClassExports = objc_classes! {
         return nil;
     }
 
-    let effective_api = effective_eagl_api(api, env.options.prefer_gles2_context);
+    let effective_api = effective_eagl_api(
+        api,
+        env.options.prefer_gles2_context,
+        env.options.angle_driver,
+    );
 
     let mut gles_ins = match effective_api {
         kEAGLRenderingAPIOpenGLES3 => create_gles3_ctx(env),

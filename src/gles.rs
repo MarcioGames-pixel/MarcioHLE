@@ -89,6 +89,47 @@ use gles3_on_gl3::GLES3OnGL3Context;
 pub use gles_generic::GLESContext;
 pub use gles_generic::GLES;
 
+pub fn configure_angle_driver(enabled: bool) {
+    if !enabled {
+        return;
+    }
+
+    let default_egl = if cfg!(target_os = "windows") {
+        "libEGL.dll"
+    } else if cfg!(target_os = "macos") {
+        "libEGL.dylib"
+    } else {
+        "libEGL.so"
+    };
+    let default_gles = if cfg!(target_os = "windows") {
+        "libGLESv2.dll"
+    } else if cfg!(target_os = "macos") {
+        "libGLESv2.dylib"
+    } else {
+        "libGLESv2.so"
+    };
+    let egl_path = std::env::var("TOUCHHLE_ANGLE_EGL").unwrap_or_else(|_| default_egl.to_owned());
+    let gles_path = std::env::var("TOUCHHLE_ANGLE_GLES").unwrap_or_else(|_| default_gles.to_owned());
+    let egl_exists = std::path::Path::new(&egl_path).exists();
+    let gles_exists = std::path::Path::new(&gles_path).exists();
+
+    unsafe {
+        std::env::set_var("SDL_VIDEO_EGL_DRIVER", &egl_path);
+        std::env::set_var("SDL_VIDEO_GL_DRIVER", &gles_path);
+    }
+    sdl2::hint::set("SDL_OPENGL_ES_DRIVER", "1");
+    log!(
+        "ANGLE override requested: EGL={} (exists={}), GLES={} (exists={}); SDL will try these before the first window",
+        egl_path,
+        egl_exists,
+        gles_path,
+        gles_exists
+    );
+    if !egl_exists || !gles_exists {
+        log!("ANGLE libraries are not present at the configured paths; SDL may fall back or context creation may fail");
+    }
+}
+
 /// Labels for [GLES] implementations and an abstraction for constructing them.
 #[derive(Copy, Clone)]
 pub enum GLESImplementation {
@@ -293,9 +334,7 @@ pub fn create_gles1_ctx_no_parent_stack(
 ) -> Box<dyn GLESContext> {
     assert!(window.on_main_stack());
     log!("Creating an OpenGL ES 1.1 context:");
-    if options.angle_driver {
-        log!("ANGLE override is enabled; SDL/EGL must provide the ANGLE ES driver");
-    }
+    configure_angle_driver(options.angle_driver);
     let list = if let Some(ref preference) = options.gles1_implementation {
         std::slice::from_ref(preference)
     } else {
