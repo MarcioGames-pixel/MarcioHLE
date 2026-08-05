@@ -17,9 +17,38 @@ const A64_KIND_TEXTURE_DESCRIPTOR: u64 = 10;
 const A64_KIND_STRING: u64 = 11;
 const A64_KIND_PIPELINE: u64 = 12;
 const A64_KIND_GENERIC: u64 = 13;
+const A64_KIND_BUNDLE: u64 = 14;
 
 fn name(symbol: &str) -> &str {
     symbol.trim_start_matches('_')
+}
+pub fn can_dispatch(symbol: &str) -> bool {
+    match name(symbol) {
+        "malloc" | "calloc" | "valloc" | "posix_memalign" | "free"
+        | "malloc_zone_free" | "realloc" | "malloc_zone_realloc" | "memcpy"
+        | "memmove" | "__memcpy_chk" | "__memmove_chk" | "memset" | "bzero"
+        | "__memset_chk" | "strlen" | "strcmp" | "strncmp" | "memcmp"
+        | "objc_release" | "objc_storeStrong" | "objc_retain"
+        | "objc_retainAutoreleasedReturnValue" | "objc_retainAutoreleaseReturnValue"
+        | "objc_autorelease" | "objc_autoreleaseReturnValue"
+        | "objc_unsafeClaimAutoreleasedReturnValue" | "objc_retainAutorelease"
+        | "objc_retainBlock" | "objc_msgSend" | "objc_msgSendSuper2"
+        | "objc_msgSend_stret" | "objc_msgSendSuper2_stret" | "objc_msgSend_fpret"
+        | "objc_msgSend_fp2ret" | "objc_getClass" | "objc_getRequiredClass"
+        | "objc_lookUpClass" | "sel_registerName" | "sel_getUid"
+        | "objc_autoreleasePoolPush" | "objc_autoreleasePoolPop"
+        | "objc_exception_throw" | "objc_begin_catch" | "objc_end_catch"
+        | "__cxa_atexit" | "atexit" | "pthread_mutex_lock"
+        | "pthread_mutex_unlock" | "pthread_mutex_init" | "pthread_mutex_destroy"
+        | "NSLog" | "NSLogv" | "os_log" | "os_logv" | "dyld_stub_binder"
+        | "CFConstantStringClassReference" | "__CFConstantStringClassReference"
+        | "MTLCreateSystemDefaultDevice" | "vkEnumerateInstanceVersion"
+        | "vkCreateInstance" | "vkDestroyInstance" | "vkDestroyDevice"
+        | "vkEnumeratePhysicalDevices" | "vkGetPhysicalDeviceQueueFamilyProperties"
+        | "vkCreateDevice" | "vkGetDeviceQueue" | "vkDeviceWaitIdle" => true,
+        value if value.starts_with("gl") || value.starts_with("egl") || value.starts_with("EAGL") => true,
+        _ => false,
+    }
 }
 
 fn return_value(context: &mut touchHLE_DynarmicA64Context, value: u64) {
@@ -33,6 +62,17 @@ fn c_string(mem: &Mem64, address: u64) -> Option<Vec<u8>> {
 
 fn c_string_eq(mem: &Mem64, address: u64, value: &[u8]) -> bool {
     c_string(mem, address).as_deref() == Some(value)
+}
+fn objc_text(mem: &Mem64, address: u64) -> Option<Vec<u8>> {
+    if objc_kind(mem, address) == Some(A64_KIND_STRING) {
+        c_string(mem, objc_field(mem, address, 56))
+    } else {
+        c_string(mem, address)
+    }
+}
+
+fn objc_text_eq(mem: &Mem64, address: u64, value: &[u8]) -> bool {
+    objc_text(mem, address).as_deref() == Some(value)
 }
 
 fn objc_object(mem: &mut Mem64, kind: u64) -> Result<u64, String> {
@@ -66,6 +106,14 @@ fn objc_string(mem: &mut Mem64, value: &str) -> Result<u64, String> {
     Ok(object)
 }
 
+fn objc_bundle(mem: &mut Mem64) -> Result<u64, String> {
+    let object = objc_object(mem, A64_KIND_BUNDLE)?;
+    set_objc_field(mem, object, 56, objc_string(mem, "/")?);
+    set_objc_field(mem, object, 64, objc_string(mem, "com.snowman.altos-odyssey")?);
+    set_objc_field(mem, object, 72, objc_string(mem, "Odyssey")?);
+    Ok(object)
+}
+
 fn objc_class_kind(mem: &Mem64, class_name: u64) -> u64 {
     match c_string(mem, class_name).as_deref() {
         Some(b"MTLDevice") => A64_KIND_DEVICE,
@@ -78,6 +126,7 @@ fn objc_class_kind(mem: &Mem64, class_name: u64) -> u64 {
         Some(b"MTLTexture") => A64_KIND_TEXTURE,
         Some(b"MTLTextureDescriptor") => A64_KIND_TEXTURE_DESCRIPTOR,
         Some(b"MTLRenderPipelineState") => A64_KIND_PIPELINE,
+        Some(b"NSBundle") => A64_KIND_BUNDLE,
         _ => A64_KIND_GENERIC,
     }
 }
@@ -95,11 +144,23 @@ fn objc_send(mem: &mut Mem64, context: &mut touchHLE_DynarmicA64Context) -> Resu
         "release" => 0,
         "class" => receiver,
         "respondsToSelector:" | "isKindOfClass:" | "hasUnifiedMemory" => 1,
+        "mainBundle" if kind == A64_KIND_CLASS && objc_text_eq(mem, class_name, b"NSBundle") => objc_bundle(mem)?,
+        "bundleIdentifier" if kind == A64_KIND_BUNDLE => objc_field(mem, receiver, 64),
+        "bundlePath" | "resourcePath" if kind == A64_KIND_BUNDLE => objc_field(mem, receiver, 56),
+        "executablePath" if kind == A64_KIND_BUNDLE => objc_string(mem, "/Odyssey")?,
+        "objectForInfoDictionaryKey:" if kind == A64_KIND_BUNDLE => 0,
+        "pathForResource:ofType:" if kind == A64_KIND_BUNDLE => 0,
         "supportsFamily:" | "supportsFeatureSet:" => 1,
         "supportsTextureSampleCount:" => u64::from(matches!(context.regs[2], 1 | 2 | 4)),
         "name" => objc_string(mem, "RadekHLE Metal device")?,
         "UTF8String" => objc_field(mem, receiver, 56),
-        "length" if kind == A64_KIND_STRING || kind == A64_KIND_BUFFER => objc_field(mem, receiver, 64),
+        "length" if kind == A64_KIND_STRING => objc_field(mem, receiver, 64),
+        "length" if kind == A64_KIND_BUFFER => objc_field(mem, receiver, 64),
+        "boolValue" if kind == A64_KIND_STRING => u64::from(!objc_text_eq(mem, receiver, b"0")),
+        "isEqualToString:" | "isEqual:" if kind == A64_KIND_STRING => {
+            u64::from(objc_text(mem, receiver) == objc_text(mem, context.regs[2]))
+        }
+        "cStringUsingEncoding:" if kind == A64_KIND_STRING => objc_field(mem, receiver, 56),
         "newCommandQueue" | "newCommandQueueWithMaxCommandBufferCount:" => objc_object(mem, A64_KIND_QUEUE)?,
         "commandBuffer" | "commandBufferWithUnretainedReferences" => objc_object(mem, A64_KIND_COMMAND_BUFFER)?,
         "renderCommandEncoderWithDescriptor:" => objc_object(mem, A64_KIND_RENDER_ENCODER)?,
@@ -186,6 +247,30 @@ fn objc_class(mem: &mut Mem64, name: u64) -> Result<u64, String> {
     Ok(object)
 }
 
+pub fn materialize_import(mem: &mut Mem64, symbol: &str) -> Result<Option<u64>, String> {
+    let symbol = name(symbol);
+    if let Some(class_name) = symbol.strip_prefix("OBJC_CLASS_$_") {
+        let pointer = mem.alloc_zeroed(class_name.len() as u64 + 1).map_err(str::to_owned)?;
+        mem.write_bytes(pointer, class_name.as_bytes()).map_err(str::to_owned)?;
+        mem.write_u8(pointer + class_name.len() as u64, 0).map_err(str::to_owned)?;
+        return Ok(Some(objc_class(mem, pointer)?));
+    }
+    if let Some(class_name) = symbol.strip_prefix("OBJC_METACLASS_$_") {
+        let pointer = mem.alloc_zeroed(class_name.len() as u64 + 1).map_err(str::to_owned)?;
+        mem.write_bytes(pointer, class_name.as_bytes()).map_err(str::to_owned)?;
+        mem.write_u8(pointer + class_name.len() as u64, 0).map_err(str::to_owned)?;
+        return Ok(Some(objc_class(mem, pointer)?));
+    }
+    if symbol == "CFConstantStringClassReference" {
+        let bytes = b"NSConstantString";
+        let pointer = mem.alloc_zeroed(bytes.len() as u64 + 1).map_err(str::to_owned)?;
+        mem.write_bytes(pointer, bytes).map_err(str::to_owned)?;
+        mem.write_u8(pointer + bytes.len() as u64, 0).map_err(str::to_owned)?;
+        return Ok(Some(objc_class(mem, pointer)?));
+    }
+    Ok(None)
+}
+
 pub fn dispatch(
     mem: &mut Mem64,
     context: &mut touchHLE_DynarmicA64Context,
@@ -219,8 +304,15 @@ pub fn dispatch(
             return_value(context, 0);
             Ok(true)
         }
-        "objc_release" | "objc_storeStrong" => {
+        "objc_release" => {
             return_value(context, 0);
+            Ok(true)
+        }
+        "objc_storeStrong" => {
+            if context.regs[0] != 0 {
+                mem.write_u64(context.regs[0], context.regs[1]).map_err(str::to_owned)?;
+            }
+            return_value(context, context.regs[1]);
             Ok(true)
         }
         "realloc" | "malloc_zone_realloc" => {
@@ -252,6 +344,24 @@ pub fn dispatch(
             return_value(context, mem.cstr_len(context.regs[0], 1024 * 1024).map_err(str::to_owned)?);
             Ok(true)
         }
+        "strcpy" | "strncpy" => {
+            let source = c_string(mem, context.regs[1]).unwrap_or_default();
+            let limit = if symbol == "strncpy" { context.regs[2] as usize } else { source.len() + 1 };
+            let mut bytes = vec![0u8; limit];
+            let copy_len = source.len().min(limit);
+            bytes[..copy_len].copy_from_slice(&source[..copy_len]);
+            mem.write_bytes(context.regs[0], &bytes).map_err(str::to_owned)?;
+            return_value(context, context.regs[0]);
+            Ok(true)
+        }
+        "strcat" => {
+            let destination_len = mem.cstr_len(context.regs[0], MAX_CSTRING).map_err(str::to_owned)?;
+            let source = c_string(mem, context.regs[1]).unwrap_or_default();
+            mem.write_bytes(context.regs[0] + destination_len, &source).map_err(str::to_owned)?;
+            mem.write_u8(context.regs[0] + destination_len + source.len() as u64, 0).map_err(str::to_owned)?;
+            return_value(context, context.regs[0]);
+            Ok(true)
+        }
         "strcmp" | "strncmp" => {
             let left = c_string(mem, context.regs[0]).unwrap_or_default();
             let right = c_string(mem, context.regs[1]).unwrap_or_default();
@@ -281,9 +391,22 @@ pub fn dispatch(
             objc_send(mem, context)?;
             Ok(true)
         }
+        "objc_msgSend_fpret" | "objc_msgSend_fp2ret" => {
+            objc_send(mem, context)?;
+            Ok(true)
+        }
         "objc_getClass" | "objc_getRequiredClass" | "objc_lookUpClass" => {
             let class = objc_class(mem, context.regs[0])?;
             return_value(context, class);
+            Ok(true)
+        }
+        "object_getClass" => {
+            return_value(context, if context.regs[0] == 0 { 0 } else { objc_class(mem, context.regs[0])? });
+            Ok(true)
+        }
+        "object_getClassName" => {
+            let class_name = objc_field(mem, context.regs[0], 56);
+            return_value(context, class_name);
             Ok(true)
         }
         "sel_registerName" | "sel_getUid" => {
@@ -307,8 +430,17 @@ pub fn dispatch(
             return_value(context, 0);
             Ok(true)
         }
-        "__CFConstantStringClassReference" => {
+        "dyld_stub_binder" => {
             return_value(context, 0);
+            Ok(true)
+        }
+        "CFConstantStringClassReference" => {
+            let class = materialize_import(mem, "OBJC_CLASS_$_NSConstantString")?.unwrap_or(0);
+            return_value(context, class);
+            Ok(true)
+        }
+        symbol if symbol.starts_with("OBJC_CLASS_$_") || symbol.starts_with("OBJC_METACLASS_$_") => {
+            return_value(context, materialize_import(mem, symbol)?.unwrap_or(0));
             Ok(true)
         }
         _ if c_string_eq(mem, context.regs[0], b"NSConcreteGlobalBlock") || c_string_eq(mem, context.regs[0], b"NSConcreteStackBlock") => {
@@ -316,7 +448,8 @@ pub fn dispatch(
             Ok(true)
         }
         "MTLCreateSystemDefaultDevice" => {
-            return_value(context, mem.alloc_zeroed(8).map_err(str::to_owned)?);
+            let object = objc_object(mem, A64_KIND_DEVICE)?;
+            return_value(context, object);
             Ok(true)
         }
         "vkEnumerateInstanceVersion" => {

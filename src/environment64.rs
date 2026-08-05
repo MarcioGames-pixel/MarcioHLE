@@ -1,4 +1,4 @@
-use crate::a64_runtime::dispatch;
+use crate::a64_runtime::{dispatch, materialize_import};
 use crate::bundle::Bundle;
 use crate::cpu::A64Cpu;
 use crate::fs::Fs;
@@ -121,11 +121,20 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     let mut host_stubs = HashMap::new();
     let mut stub_by_symbol = HashMap::new();
     let mut unresolved = Vec::new();
-    for binding in &executable.bindings {
+    let mut materialized_imports = 0usize;
+    for (binding_index, binding) in executable.bindings.iter().enumerate() {
+        if let Some(value) = materialize_import(&mut memory, &binding.symbol)? {
+            if binding_index < 32 {
+                echo!("ARM64 materialized import #{}: {} -> {:#x}", binding_index, binding.symbol, value);
+            }
+            memory.write_u64(binding.address, value.checked_add_signed(binding.addend).ok_or("ARM64 import address overflows")?).map_err(str::to_owned)?;
+            materialized_imports += 1;
+            continue;
+        }
         let symbol = lookup_host_symbol(&binding.symbol)
             .or_else(|| lookup_host_symbol(binding.symbol.strip_prefix('_').unwrap_or(&binding.symbol)))
             .unwrap_or("<unimplemented>");
-        if symbol == "<unimplemented>" {
+        if symbol == "<unimplemented>" && !crate::a64_runtime::can_dispatch(&binding.symbol) {
             unresolved.push(binding.symbol.clone());
         }
         let (svc, stub) = if let Some(&(svc, stub)) = stub_by_symbol.get(symbol) {
@@ -142,7 +151,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     }
 
     echo!(
-        "ARM64 runtime: entry point {:#x}, image_end {:#x}, {} bindings, {} unresolved, stack {:#x}, argv {:#x}, envp {:#x}, apple {:#x}",
+        "ARM64 runtime: entry point {:#x}, image_end {:#x}, {} host stubs, {} materialized imports, {} unresolved, stack {:#x}, argv {:#x}, envp {:#x}, apple {:#x}",
         entry,
         image_end,
         host_stubs.len(),
@@ -176,6 +185,8 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     cpu.load_context(&context);
     let mut ticks = Some(100_000_u64);
     let mut host_dispatches = 0_u64;
+    let mut last_pc = context.pc;
+    let mut repeated_pc = 0_u64;
     loop {
         let result = cpu.run_or_step(&mut memory, ticks.as_mut());
         cpu.save_context(&mut context);
@@ -226,10 +237,23 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             }
             value if value >= SVC_HOST_BASE as i32 => {
                 host_dispatches += 1;
+                if context.pc == last_pc {
+                    repeated_pc += 1;
+                } else {
+                    last_pc = context.pc;
+                    repeated_pc = 0;
+                }
+                if repeated_pc > 100_000 {
+                    return Err(format!(
+                        "ARM64 runtime stalled at pc {:#x}; last host binding was {}",
+                        context.pc,
+                        host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>"),
+                    ));
+                }
                 let symbol = host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>");
-                if host_dispatches <= 128 {
+                if host_dispatches <= 128 || host_dispatches.is_power_of_two() {
                     echo!(
-                        "ARM64 host binding #{}: {} pc={:#x} sp={:#x} lr={:#x} x0={:#x} x1={:#x} x2={:#x} x3={:#x}",
+                        "ARM64 host binding #{}: {} pc={:#x} sp={:#x} lr={:#x} x0={:#x} x1={:#x} x2={:#x} x3={:#x} x4={:#x} x5={:#x}",
                         host_dispatches,
                         symbol,
                         context.pc,
@@ -239,6 +263,8 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                         context.regs[1],
                         context.regs[2],
                         context.regs[3],
+                        context.regs[4],
+                        context.regs[5],
                     );
                 }
                 let handled = dispatch(&mut memory, &mut context, symbol)?;

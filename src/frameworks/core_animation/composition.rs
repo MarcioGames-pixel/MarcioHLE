@@ -81,8 +81,11 @@ pub fn recomposite_if_necessary(env: &mut Environment, force: bool) -> Option<In
     // Advance any UIImageView frame animations before compositing.
     crate::frameworks::uikit::ui_view::ui_image_view::update_animations(env);
 
-    if find_fullscreen_eagl_layer(env) != nil {
-        // No composition done, EAGLContext will present directly.
+    if !force && find_fullscreen_eagl_layer(env) != nil {
+        // No composition is needed for the normal direct EAGL path. A forced
+        // recomposite is used by native ES1 readback presentation, where the
+        // frame is already in the layer's RAM backing store and must still be
+        // uploaded to the host window.
         log_dbg!("Using CAEAGLLayer fast path, skipping composition");
         return None;
     }
