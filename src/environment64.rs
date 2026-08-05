@@ -130,6 +130,17 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         A64GraphicsBackend::OpenGLESCompatibility
     };
     let mut runtime_state = RuntimeState::new(ios_version, graphics_backend);
+    let mut window = if options.headless {
+        None
+    } else {
+        Some(Box::new(crate::window::Window::new(
+            "RadekHLE ARM64",
+            None,
+            None,
+            &options,
+        )))
+    };
+    echo!("ARM64 graphics runtime: Metal calls are routed to the compatibility presenter; the existing EAGL/OpenGL ES surface is used for display");
     echo!(
         "ARM64 graphics backend selected: {} (Metal calls use the compatibility layer; the SDL presentation surface remains OpenGL ES)",
         graphics_backend.label()
@@ -304,6 +315,20 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                     );
                 }
                 let handled = dispatch(&mut memory, &mut context, symbol, &mut runtime_state)?;
+                if runtime_state.take_present_request() {
+                    log_dbg!(
+                        "ARM64 Metal frame {} submitted: commands={}, clear={:?}",
+                        runtime_state.frame_serial,
+                        runtime_state.metal_commands,
+                        runtime_state.clear_color
+                    );
+                    if let Some(window) = window.as_mut() {
+                        window.present_compatibility_frame(runtime_state.clear_color);
+                    }
+                }
+                if let Some(window) = window.as_mut() {
+                    window.poll_for_events(&options);
+                }
                 if !handled {
                     echo!("Warning: ARM64 host function {} is not implemented; returning zero", symbol);
                 }

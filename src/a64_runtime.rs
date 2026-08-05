@@ -43,6 +43,9 @@ pub struct RuntimeState {
     pub host_dispatches: u64,
     pub objc_messages: u64,
     pub metal_commands: u64,
+    pub frame_serial: u64,
+    pub present_requested: bool,
+    pub clear_color: [f32; 4],
     pub last_selector: Option<String>,
 }
 
@@ -54,8 +57,15 @@ impl RuntimeState {
             host_dispatches: 0,
             objc_messages: 0,
             metal_commands: 0,
+            frame_serial: 0,
+            present_requested: false,
+            clear_color: [0.0, 0.0, 0.0, 1.0],
             last_selector: None,
         }
+    }
+
+    pub fn take_present_request(&mut self) -> bool {
+        std::mem::take(&mut self.present_requested)
     }
 }
 
@@ -114,6 +124,15 @@ fn objc_text(mem: &Mem64, address: u64) -> Option<Vec<u8>> {
 
 fn objc_text_eq(mem: &Mem64, address: u64, value: &[u8]) -> bool {
     objc_text(mem, address).as_deref() == Some(value)
+}
+
+fn metal_clear_color(context: &touchHLE_DynarmicA64Context) -> [f32; 4] {
+    [
+        f64::from_bits(context.vectors[0][0]) as f32,
+        f64::from_bits(context.vectors[0][1]) as f32,
+        f64::from_bits(context.vectors[1][0]) as f32,
+        f64::from_bits(context.vectors[1][1]) as f32,
+    ]
 }
 
 fn objc_object(mem: &mut Mem64, kind: u64) -> Result<u64, String> {
@@ -201,6 +220,10 @@ fn objc_send(
     if matches!(selector.as_str(), "commit" | "waitUntilCompleted" | "presentDrawable:" | "endEncoding") {
         state.metal_commands = state.metal_commands.saturating_add(1);
     }
+    if matches!(selector.as_str(), "commit" | "presentDrawable:") {
+        state.frame_serial = state.frame_serial.saturating_add(1);
+        state.present_requested = true;
+    }
     let result = match selector.as_str() {
         "init" | "self" | "retain" | "autorelease" | "copy" | "mutableCopy" => receiver,
         "release" => 0,
@@ -229,6 +252,10 @@ fn objc_send(
         )?,
         "supportsFamily:" | "supportsFeatureSet:" => 1,
         "supportsTextureSampleCount:" => u64::from(matches!(context.regs[2], 1 | 2 | 4)),
+        "setClearColor:" => {
+            state.clear_color = metal_clear_color(context);
+            0
+        }
         "name" => objc_string(mem, "RadekHLE Metal device")?,
         "UTF8String" => objc_field(mem, receiver, 56),
         "length" if kind == A64_KIND_STRING => objc_field(mem, receiver, 64),

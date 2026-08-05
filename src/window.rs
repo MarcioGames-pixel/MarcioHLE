@@ -2039,6 +2039,18 @@ impl Window {
         }
     }
 
+    pub fn present_compatibility_frame(&mut self, clear_color: [f32; 4]) {
+        let (x, y, width, height) = self.viewport();
+        let mut gl = self.make_internal_gl_ctx_current();
+        unsafe {
+            gl.Viewport(x as _, y as _, width as _, height as _);
+            gl.ClearColor(clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
+            gl.Clear(crate::gles::gles11_raw::COLOR_BUFFER_BIT);
+        }
+        drop(gl);
+        self.swap_window();
+    }
+
     /// Consider the emulated device to be rotated to a particular orientation.
     ///
     /// On a PC or laptop, this will make the window be rotated so the app
