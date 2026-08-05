@@ -408,6 +408,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         let parse_result = options.parse_argument(&option_arg);
         assert!(parse_result == Ok(true));
     }
+    crate::log::set_file_logging(options.log_file);
 
     let architecture = {
         let executable_bytes = fs

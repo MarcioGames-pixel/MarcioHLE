@@ -118,6 +118,66 @@ fn enumerate_apps(apps_dir: &Path) -> Result<Vec<AppInfo>, std::io::Error> {
     Ok(apps)
 }
 
+const IOS_VERSION_ENTRIES: &[(&str, i32)] = &[
+    ("Latest (iOS 12.4.1)", 0),
+    ("iOS 2.0", 1),
+    ("iOS 3.0", 2),
+    ("iOS 4.3", 3),
+    ("iOS 5.1", 4),
+    ("iOS 6.1", 5),
+    ("iOS 7.1", 6),
+    ("iOS 8.4", 7),
+    ("iOS 9.3", 8),
+    ("iOS 10.3", 9),
+    ("iOS 11.4", 10),
+    ("iOS 12.4.1", 11),
+];
+
+fn ios_version_for_tag(tag: i32) -> Option<(i32, i32, i32)> {
+    match tag {
+        0 => None,
+        1 => Some((2, 0, 0)),
+        2 => Some((3, 0, 0)),
+        3 => Some((4, 3, 0)),
+        4 => Some((5, 1, 0)),
+        5 => Some((6, 1, 0)),
+        6 => Some((7, 1, 0)),
+        7 => Some((8, 4, 0)),
+        8 => Some((9, 3, 0)),
+        9 => Some((10, 3, 0)),
+        10 => Some((11, 4, 0)),
+        11 => Some((12, 4, 1)),
+        _ => None,
+    }
+}
+
+fn ios_version_tag(value: Option<(i32, i32, i32)>) -> i32 {
+    match value {
+        None => 0,
+        Some((2, 0, 0)) => 1,
+        Some((3, 0, 0)) => 2,
+        Some((4, 3, 0)) => 3,
+        Some((5, 1, 0)) => 4,
+        Some((6, 1, 0)) => 5,
+        Some((7, 1, 0)) => 6,
+        Some((8, 4, 0)) => 7,
+        Some((9, 3, 0)) => 8,
+        Some((10, 3, 0)) => 9,
+        Some((11, 4, 0)) => 10,
+        Some((12, 4, 1)) => 11,
+        _ => 0,
+    }
+}
+
+fn ios_version_label(value: Option<(i32, i32, i32)>) -> String {
+    let tag = ios_version_tag(value);
+    IOS_VERSION_ENTRIES
+        .iter()
+        .find(|(_, entry_tag)| *entry_tag == tag)
+        .map(|(label, _)| (*label).to_string())
+        .unwrap_or_else(|| "Latest (iOS 12.4.1)".to_string())
+}
+
 #[derive(Default)]
 struct AppPickerDelegateHostObject {
     icon_tapped: id,
@@ -141,16 +201,16 @@ struct AppPickerDelegateHostObject {
     /// Quick option: show FPS counter (maps to --print-fps)
     show_fps: Option<bool>,
     fullscreen: Option<bool>,
+    angle_driver: Option<bool>,
+    log_file: Option<bool>,
+    fast_memory: Option<bool>,
     device_model_tag: Option<i32>,
     device_model_toggle: bool,
     device_model_scroll_up: bool,
     device_model_scroll_down: bool,
     apps_refresh_requested: bool,
-    ios_version_latest: bool,
     ios_version_toggle: bool,
-    ios_version_43: bool,
-    ios_version_61: bool,
-    ios_version_93: bool,
+    ios_version: Option<Option<(i32, i32, i32)>>,
 }
 impl HostObject for AppPickerDelegateHostObject {}
 
@@ -253,6 +313,18 @@ const CLASSES: ClassExports = objc_classes! {
     let switch_state: bool = msg![env; switch isOn];
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).fullscreen = Some(switch_state);
 }
+- (())angleDriver:(id)switch { // UISwitch*
+    let switch_state: bool = msg![env; switch isOn];
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).angle_driver = Some(switch_state);
+}
+- (())logFile:(id)switch { // UISwitch*
+    let switch_state: bool = msg![env; switch isOn];
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).log_file = Some(switch_state);
+}
+- (())fastMemory:(id)switch { // UISwitch*
+    let switch_state: bool = msg![env; switch isOn];
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).fast_memory = Some(switch_state);
+}
 - (())deviceModel:(id)sender { // UIButton*
     let tag: NSInteger = msg![env; sender tag];
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).device_model_tag = Some(tag as i32);
@@ -269,20 +341,12 @@ const CLASSES: ClassExports = objc_classes! {
 - (())refreshApps {
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).apps_refresh_requested = true;
 }
-- (())iosVersionLatest {
-    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version_latest = true;
-}
 - (())iosVersionToggle {
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version_toggle = true;
 }
-- (())iosVersion43 {
-    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version_43 = true;
-}
-- (())iosVersion61 {
-    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version_61 = true;
-}
-- (())iosVersion93 {
-    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version_93 = true;
+- (())iosVersion:(id)sender {
+    let tag: NSInteger = msg![env; sender tag];
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version = Some(ios_version_for_tag(tag as i32));
 }
 
 - (())openFileManager {
@@ -577,7 +641,7 @@ fn app_picker_inner(
         buttons_row_center,
         &[
             ("Add game folder", "openFileManager"),
-            ("Quick options", "quickOptionsShow"),
+            ("Settings", "quickOptionsShow"),
         ],
         None,
     );
@@ -605,6 +669,9 @@ fn app_picker_inner(
     let mut quick_options_analog_stick_tilt_controls = true;
     let mut quick_options_network = false;
     let mut quick_options_show_fps = false;
+    let mut quick_options_angle_driver = false;
+    let mut quick_options_log_file = true;
+    let mut quick_options_fast_memory = true;
     let mut quick_options_device_tag: Option<i32> = None;
     let mut quick_options_device_model_open = false;
     let mut quick_options_device_model_scroll: isize = 0;
@@ -622,15 +689,6 @@ fn app_picker_inner(
     }
     fn update_scale_hack_buttons(env: &mut Environment, buttons: &[id], value: Option<NonZeroU32>) {
         update_quick_option_buttons(env, buttons, value.map_or(0, |v| v.get() as usize));
-    }
-    fn ios_version_tag(value: Option<(i32, i32, i32)>) -> i32 {
-        match value {
-            None => 0,
-            Some((4, 3, 0)) => 1,
-            Some((6, 1, 0)) => 2,
-            Some((9, 3, 0)) => 3,
-            _ => 0,
-        }
     }
     fn update_ios_version_dropdown(
         env: &mut Environment,
@@ -650,13 +708,7 @@ fn app_picker_inner(
             };
             () = msg![env; item setBackgroundColor:color];
         }
-        let label = match tag {
-            0 => format!("Latest (iOS {})", crate::options::LATEST_IOS_VERSION.0),
-            1 => "iOS 4.3".to_string(),
-            2 => "iOS 6.1".to_string(),
-            3 => "iOS 9.3".to_string(),
-            _ => "Latest".to_string(),
-        };
+        let label = ios_version_label(value);
         let title = ns_string::from_rust_string(env, label);
         () = msg![env; button setTitle:title forState:UIControlStateNormal];
         let black: id = msg_class![env; UIColor blackColor];
@@ -807,17 +859,8 @@ fn app_picker_inner(
                 () = msg![env; (quick_options_stuff.main_view) bringSubviewToFront:(quick_options_stuff.ios_version_menu)];
                 () = msg![env; (quick_options_stuff.main_view) bringSubviewToFront:(quick_options_stuff.ios_version_btn)];
             }
-        } else if std::mem::take(&mut host_obj.ios_version_latest) {
-            quick_options_ios_version = None;
-            update_ios_version_dropdown(env, quick_options_stuff.ios_version_btn, quick_options_stuff.ios_version_menu, &quick_options_stuff.ios_version_items, quick_options_ios_version);
-        } else if std::mem::take(&mut host_obj.ios_version_43) {
-            quick_options_ios_version = Some((4, 3, 0));
-            update_ios_version_dropdown(env, quick_options_stuff.ios_version_btn, quick_options_stuff.ios_version_menu, &quick_options_stuff.ios_version_items, quick_options_ios_version);
-        } else if std::mem::take(&mut host_obj.ios_version_61) {
-            quick_options_ios_version = Some((6, 1, 0));
-            update_ios_version_dropdown(env, quick_options_stuff.ios_version_btn, quick_options_stuff.ios_version_menu, &quick_options_stuff.ios_version_items, quick_options_ios_version);
-        } else if std::mem::take(&mut host_obj.ios_version_93) {
-            quick_options_ios_version = Some((9, 3, 0));
+        } else if let Some(version) = std::mem::take(&mut host_obj.ios_version) {
+            quick_options_ios_version = version;
             update_ios_version_dropdown(env, quick_options_stuff.ios_version_btn, quick_options_stuff.ios_version_menu, &quick_options_stuff.ios_version_items, quick_options_ios_version);
         } else if std::mem::take(&mut host_obj.scale_hack_default) {
             quick_options_scale_hack = None;
@@ -942,6 +985,12 @@ fn app_picker_inner(
             quick_options_network = enabled;
         } else if let Some(enabled) = std::mem::take(&mut host_obj.show_fps) {
             quick_options_show_fps = enabled;
+        } else if let Some(enabled) = std::mem::take(&mut host_obj.angle_driver) {
+            quick_options_angle_driver = enabled;
+        } else if let Some(enabled) = std::mem::take(&mut host_obj.log_file) {
+            quick_options_log_file = enabled;
+        } else if let Some(enabled) = std::mem::take(&mut host_obj.fast_memory) {
+            quick_options_fast_memory = enabled;
         } else if let Some(fullscreen) = std::mem::take(&mut host_obj.fullscreen) {
             quick_options_fullscreen = match fullscreen {
                 false => None,
@@ -979,13 +1028,25 @@ fn app_picker_inner(
     }
 
     if quick_options_show_fps {
-        // Reuse existing CLI flag to enable FPS logging/counter behaviour.
         option_args.push("--print-fps".to_string());
-        // Also enable the on-screen FPS overlay both via env var and runtime
-        // flag so users don't need to set env vars manually.
         std::env::set_var("TOUCHHLE_ONSCREEN_FPS", "1");
         crate::gles::present::set_onscreen_fps_enabled(true);
     }
+    option_args.push(if quick_options_angle_driver {
+        "--angle-driver"
+    } else {
+        "--disable-angle-driver"
+    }.to_string());
+    option_args.push(if quick_options_log_file {
+        "--enable-log-file"
+    } else {
+        "--disable-log-file"
+    }.to_string());
+    option_args.push(if quick_options_fast_memory {
+        "--enable-direct-memory-access"
+    } else {
+        "--disable-direct-memory-access"
+    }.to_string());
 
     if let Some(tag) = quick_options_device_tag {
         let tag = tag as NSInteger;
@@ -1714,6 +1775,12 @@ fn setup_quick_options(
         RowKind::DeviceDropdown,
         RowKind::Label("Network access"),
         RowKind::Switch("network:", false),
+        RowKind::Label("ANGLE driver"),
+        RowKind::Switch("angleDriver:", false),
+        RowKind::Label("Enable log file"),
+        RowKind::Switch("logFile:", true),
+        RowKind::Label("Fast memory"),
+        RowKind::Switch("fastMemory:", true),
         RowKind::Label("Show FPS"),
         RowKind::Switch("showFPS:", false),
         RowKind::Label("Use analog sticks for tilt controls"),
@@ -1928,7 +1995,6 @@ fn make_ios_version_dropdown(
     let title = ns_string::get_static_str(env, "iOS version");
     () = msg![env; button setTitle:title forState:UIControlStateNormal];
     let black: id = msg_class![env; UIColor blackColor];
-    let white: id = msg_class![env; UIColor whiteColor];
     let dark_gray: id = msg_class![env; UIColor darkGrayColor];
     let magenta: id = msg_class![env; UIColor magentaColor];
     () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
@@ -1943,8 +2009,14 @@ fn make_ios_version_dropdown(
 
     let menu: id = msg_class![env; UIView alloc];
     let menu: id = msg![env; menu initWithFrame:(CGRect {
-        origin: CGPoint { x: button_frame.origin.x, y: button_frame.origin.y + button_height },
-        size: CGSize { width: button_width, height: item_height * 4.0 },
+        origin: CGPoint {
+            x: button_frame.origin.x,
+            y: (button_frame.origin.y - item_height * IOS_VERSION_ENTRIES.len() as CGFloat).max(0.0),
+        },
+        size: CGSize {
+            width: button_width,
+            height: item_height * IOS_VERSION_ENTRIES.len() as CGFloat,
+        },
     })];
     () = msg![env; menu setBackgroundColor:dark_gray];
     () = msg![env; menu setClipsToBounds:true];
@@ -1953,28 +2025,24 @@ fn make_ios_version_dropdown(
     () = msg![env; menu setHidden:true];
     () = msg![env; super_view addSubview:menu];
 
-    let entries = [
-        ("Latest (iOS 12.4.1)", "iosVersionLatest", 0i32),
-        ("iOS 4.3", "iosVersion43", 1i32),
-        ("iOS 6.1", "iosVersion61", 2i32),
-        ("iOS 9.3", "iosVersion93", 3i32),
-    ];
+    let entries = IOS_VERSION_ENTRIES;
     let mut items = Vec::new();
-    for (index, (label, selector_name, tag)) in entries.into_iter().enumerate() {
+    for (index, (label, tag)) in entries.iter().enumerate() {
         let item: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
-        let text = ns_string::from_rust_string(env, label.to_owned());
+        let text = ns_string::from_rust_string(env, (*label).to_owned());
         () = msg![env; item setTitle:text forState:UIControlStateNormal];
         let item_text_color: id = msg_class![env; UIColor whiteColor];
         () = msg![env; item setTitleColor:item_text_color forState:UIControlStateNormal];
-        let item_color: id = if tag == 0 { magenta } else { dark_gray };
+        let item_color: id = if *tag == 0 { magenta } else { dark_gray };
         () = msg![env; item setBackgroundColor:item_color];
         () = msg![env; item setFrame:(CGRect {
             origin: CGPoint { x: 0.0, y: index as CGFloat * item_height },
             size: CGSize { width: button_width, height: item_height },
         })];
         () = msg![env; item layoutSubviews];
+        let tag: NSInteger = *tag as NSInteger;
         () = msg![env; item setTag:tag];
-        let selector = env.objc.lookup_selector(selector_name).unwrap();
+        let selector = env.objc.lookup_selector("iosVersion:").unwrap();
         () = msg![env; item addTarget:delegate action:selector forControlEvents:UIControlEventTouchUpInside];
         () = msg![env; menu addSubview:item];
         items.push(item);
@@ -2082,6 +2150,7 @@ fn make_device_model_dropdown(
         () = msg![env; item_btn setTitleColor:white forState:UIControlStateNormal];
         () = msg![env; item_btn setFrame:item_frame];
         () = msg![env; item_btn layoutSubviews];
+        let tag: NSInteger = tag as NSInteger;
         () = msg![env; item_btn setTag:tag];
         if y_pos >= visible_menu_height {
             () = msg![env; item_btn setHidden:true];

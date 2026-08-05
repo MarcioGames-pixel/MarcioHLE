@@ -293,6 +293,9 @@ pub fn create_gles1_ctx_no_parent_stack(
 ) -> Box<dyn GLESContext> {
     assert!(window.on_main_stack());
     log!("Creating an OpenGL ES 1.1 context:");
+    if options.angle_driver {
+        log!("ANGLE override is enabled; SDL/EGL must provide the ANGLE ES driver");
+    }
     let list = if let Some(ref preference) = options.gles1_implementation {
         std::slice::from_ref(preference)
     } else {

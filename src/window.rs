@@ -42,6 +42,16 @@ pub enum DeviceFamily {
     iPhone4s,
     iPhone5,
     iPhone5c,
+    iPhone6,
+    iPhone6Plus,
+    iPhone6s,
+    iPhone6sPlus,
+    iPhoneSE,
+    iPhone7,
+    iPhone7Plus,
+    iPhone8,
+    iPhone8Plus,
+    iPhoneX,
     iPad,
     iPad2,
     iPad3,
@@ -71,6 +81,16 @@ impl DeviceFamily {
             DeviceFamily::iPhone4s => "iPhone 4s",
             DeviceFamily::iPhone5 => "iPhone 5",
             DeviceFamily::iPhone5c => "iPhone 5c",
+            DeviceFamily::iPhone6 => "iPhone 6",
+            DeviceFamily::iPhone6Plus => "iPhone 6 Plus",
+            DeviceFamily::iPhone6s => "iPhone 6s",
+            DeviceFamily::iPhone6sPlus => "iPhone 6s Plus",
+            DeviceFamily::iPhoneSE => "iPhone SE",
+            DeviceFamily::iPhone7 => "iPhone 7",
+            DeviceFamily::iPhone7Plus => "iPhone 7 Plus",
+            DeviceFamily::iPhone8 => "iPhone 8",
+            DeviceFamily::iPhone8Plus => "iPhone 8 Plus",
+            DeviceFamily::iPhoneX => "iPhone X",
             DeviceFamily::iPad => "iPad",
             DeviceFamily::iPad2 => "iPad 2",
             DeviceFamily::iPad3 => "iPad 3",
@@ -123,6 +143,16 @@ impl DeviceFamily {
                 | DeviceFamily::iPhone4s
                 | DeviceFamily::iPhone5
                 | DeviceFamily::iPhone5c
+                | DeviceFamily::iPhone6
+                | DeviceFamily::iPhone6s
+                | DeviceFamily::iPhone7
+                | DeviceFamily::iPhone8
+                | DeviceFamily::iPhone6Plus
+                | DeviceFamily::iPhone6sPlus
+                | DeviceFamily::iPhone7Plus
+                | DeviceFamily::iPhone8Plus
+                | DeviceFamily::iPhoneSE
+                | DeviceFamily::iPhoneX
                 | DeviceFamily::iPodTouch4
                 | DeviceFamily::iPodTouch5
                 | DeviceFamily::iPad3
@@ -135,21 +165,22 @@ impl DeviceFamily {
 
     /// Portrait (width, height) in logical points.
     pub fn portrait_size(&self) -> (u32, u32) {
-        if self.is_ipad() {
-            (768, 1024)
-        } else if self.is_phone_568() {
-            (320, 568)
-        } else {
-            (320, 480)
+        match self {
+            DeviceFamily::iPhone6 | DeviceFamily::iPhone6s | DeviceFamily::iPhone7 | DeviceFamily::iPhone8 => (375, 667),
+            DeviceFamily::iPhone6Plus | DeviceFamily::iPhone6sPlus | DeviceFamily::iPhone7Plus | DeviceFamily::iPhone8Plus => (414, 736),
+            DeviceFamily::iPhoneX => (375, 812),
+            _ if self.is_ipad() => (768, 1024),
+            _ if self.is_phone_568() => (320, 568),
+            _ => (320, 480),
         }
     }
 
     /// UIScreen.scale — retina multiplier.
     pub fn scale_factor(&self) -> f32 {
-        if self.is_retina() {
-            2.0
-        } else {
-            1.0
+        match self {
+            DeviceFamily::iPhone6Plus | DeviceFamily::iPhone6sPlus | DeviceFamily::iPhone7Plus | DeviceFamily::iPhone8Plus | DeviceFamily::iPhoneX => 3.0,
+            _ if self.is_retina() => 2.0,
+            _ => 1.0,
         }
     }
 
@@ -163,6 +194,16 @@ impl DeviceFamily {
             DeviceFamily::iPhone4s => "iPhone4,1",
             DeviceFamily::iPhone5 => "iPhone5,1",
             DeviceFamily::iPhone5c => "iPhone5,3",
+            DeviceFamily::iPhone6 => "iPhone7,2",
+            DeviceFamily::iPhone6Plus => "iPhone7,1",
+            DeviceFamily::iPhone6s => "iPhone8,1",
+            DeviceFamily::iPhone6sPlus => "iPhone8,2",
+            DeviceFamily::iPhoneSE => "iPhone8,4",
+            DeviceFamily::iPhone7 => "iPhone9,1",
+            DeviceFamily::iPhone7Plus => "iPhone9,2",
+            DeviceFamily::iPhone8 => "iPhone10,1",
+            DeviceFamily::iPhone8Plus => "iPhone10,2",
+            DeviceFamily::iPhoneX => "iPhone10,3",
             DeviceFamily::iPad => "iPad1,1",
             DeviceFamily::iPad2 => "iPad2,1",
             DeviceFamily::iPad3 => "iPad3,1",
@@ -214,12 +255,22 @@ impl DeviceFamily {
             | DeviceFamily::iPad3
             | DeviceFamily::iPad4
             | DeviceFamily::iPadMini
-            | DeviceFamily::iPodTouch5 => 512 * MIB,
+            | DeviceFamily::iPodTouch5
+            | DeviceFamily::iPhone6
+            | DeviceFamily::iPhone6s
+            | DeviceFamily::iPhoneSE
+            | DeviceFamily::iPhone7
+            | DeviceFamily::iPhone8 => 512 * MIB,
             // iPad 5 (2017) and the Retina iPad minis shipped with 1 GiB. We
             // intentionally cap this at 1 GiB even though the address space is
             // 4 GiB, leaving headroom for the guest heap, stacks and mapped
             // libraries.
-            DeviceFamily::iPad5
+            DeviceFamily::iPhone6Plus
+            | DeviceFamily::iPhone6sPlus
+            | DeviceFamily::iPhone7Plus
+            | DeviceFamily::iPhone8Plus
+            | DeviceFamily::iPhoneX
+            | DeviceFamily::iPad5
             | DeviceFamily::iPadMini2
             | DeviceFamily::iPadMini3 => 1024 * MIB,
         }
@@ -269,6 +320,16 @@ impl DeviceFamily {
             DeviceFamily::iPhone4s => "iphone-4s",
             DeviceFamily::iPhone5 => "iphone-5",
             DeviceFamily::iPhone5c => "iphone-5c",
+            DeviceFamily::iPhone6 => "iphone-6",
+            DeviceFamily::iPhone6Plus => "iphone-6-plus",
+            DeviceFamily::iPhone6s => "iphone-6s",
+            DeviceFamily::iPhone6sPlus => "iphone-6s-plus",
+            DeviceFamily::iPhoneSE => "iphone-se",
+            DeviceFamily::iPhone7 => "iphone-7",
+            DeviceFamily::iPhone7Plus => "iphone-7-plus",
+            DeviceFamily::iPhone8 => "iphone-8",
+            DeviceFamily::iPhone8Plus => "iphone-8-plus",
+            DeviceFamily::iPhoneX => "iphone-x",
             DeviceFamily::iPad => "ipad-1",
             DeviceFamily::iPad2 => "ipad-2",
             DeviceFamily::iPad3 => "ipad-3",
@@ -295,6 +356,16 @@ impl DeviceFamily {
         DeviceFamily::iPhone4s,
         DeviceFamily::iPhone5,
         DeviceFamily::iPhone5c,
+        DeviceFamily::iPhone6,
+        DeviceFamily::iPhone6Plus,
+        DeviceFamily::iPhone6s,
+        DeviceFamily::iPhone6sPlus,
+        DeviceFamily::iPhoneSE,
+        DeviceFamily::iPhone7,
+        DeviceFamily::iPhone7Plus,
+        DeviceFamily::iPhone8,
+        DeviceFamily::iPhone8Plus,
+        DeviceFamily::iPhoneX,
         DeviceFamily::iPad,
         DeviceFamily::iPad2,
         DeviceFamily::iPad3,
@@ -332,6 +403,16 @@ impl TryFrom<&str> for DeviceFamily {
             "iphone-4s" | "iphone4,1" => Ok(DeviceFamily::iPhone4s),
             "iphone-5" | "iphone5,1" => Ok(DeviceFamily::iPhone5),
             "iphone-5c" | "iphone5,3" => Ok(DeviceFamily::iPhone5c),
+            "iphone-6" | "iphone7,2" => Ok(DeviceFamily::iPhone6),
+            "iphone-6-plus" | "iphone7,1" => Ok(DeviceFamily::iPhone6Plus),
+            "iphone-6s" | "iphone8,1" => Ok(DeviceFamily::iPhone6s),
+            "iphone-6s-plus" | "iphone8,2" => Ok(DeviceFamily::iPhone6sPlus),
+            "iphone-se" | "iphone8,4" => Ok(DeviceFamily::iPhoneSE),
+            "iphone-7" | "iphone9,1" => Ok(DeviceFamily::iPhone7),
+            "iphone-7-plus" | "iphone9,2" => Ok(DeviceFamily::iPhone7Plus),
+            "iphone-8" | "iphone10,1" => Ok(DeviceFamily::iPhone8),
+            "iphone-8-plus" | "iphone10,2" => Ok(DeviceFamily::iPhone8Plus),
+            "iphone-x" | "iphone10,3" => Ok(DeviceFamily::iPhoneX),
             "ipad" => Ok(DeviceFamily::iPad2),
             "ipad-1" | "ipad1,1" => Ok(DeviceFamily::iPad),
             "ipad-2" | "ipad2,1" => Ok(DeviceFamily::iPad2),

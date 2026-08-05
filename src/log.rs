@@ -6,7 +6,21 @@
 //! Logging and terminal output macros.
 
 use std::fs::File;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::LazyLock;
+
+static FILE_LOGGING_ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_file_logging(enabled: bool) {
+    FILE_LOGGING_ENABLED.store(enabled, Ordering::Relaxed);
+    if !enabled {
+        let _ = std::fs::remove_file(crate::paths::user_data_base_path().join("touchHLE_log.txt"));
+    }
+}
+
+pub fn file_logging_enabled() -> bool {
+    FILE_LOGGING_ENABLED.load(Ordering::Relaxed)
+}
 
 /// Get a handle to the log file. This is only for use by logging macros!
 ///
@@ -87,10 +101,12 @@ macro_rules! echo {
             #[cfg(not(target_os = "android"))]
             eprintln!("{}", formatted_str);
 
-            use std::io::Write;
-            let mut log_file = $crate::log::get_log_file();
-            let _ = log_file.write_all(formatted_str.as_bytes());
-            let _ = log_file.write_all(b"\n");
+            if $crate::log::file_logging_enabled() {
+                use std::io::Write;
+                let mut log_file = $crate::log::get_log_file();
+                let _ = log_file.write_all(formatted_str.as_bytes());
+                let _ = log_file.write_all(b"\n");
+            }
         }
     };
     () => {
@@ -102,8 +118,10 @@ macro_rules! echo {
             #[cfg(not(target_os = "android"))]
             eprintln!("");
 
-            use std::io::Write;
-            let _ = $crate::log::get_log_file().write_all(b"\n");
+            if $crate::log::file_logging_enabled() {
+                use std::io::Write;
+                let _ = $crate::log::get_log_file().write_all(b"\n");
+            }
         }
     }
 }

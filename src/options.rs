@@ -63,6 +63,9 @@ pub struct Options {
     /// Allow selected early OpenGL ES 2.0 apps to use the GLES2 subset exposed
     /// through touchHLE's desktop OpenGL 2.1 compatibility backend.
     pub gles2_compat: bool,
+    pub angle_driver: bool,
+    pub log_file: bool,
+    pub fast_memory: bool,
     pub direct_memory_access: bool,
     pub gdb_listen_addrs: Option<Vec<SocketAddr>>,
     pub preferred_languages: Option<Vec<String>>,
@@ -140,6 +143,9 @@ impl Default for Options {
             stabilize_virtual_cursor: None,
             gles1_implementation: None,
             gles2_compat: false,
+            angle_driver: false,
+            log_file: true,
+            fast_memory: true,
             direct_memory_access: true,
             gdb_listen_addrs: None,
             preferred_languages: None,
@@ -317,8 +323,20 @@ impl Options {
             );
         } else if arg == "--gles2-compat" {
             self.gles2_compat = true;
+        } else if arg == "--angle-driver" {
+            self.angle_driver = true;
+        } else if arg == "--disable-angle-driver" {
+            self.angle_driver = false;
+        } else if arg == "--disable-log-file" {
+            self.log_file = false;
+        } else if arg == "--enable-log-file" {
+            self.log_file = true;
         } else if arg == "--disable-direct-memory-access" {
+            self.fast_memory = false;
             self.direct_memory_access = false;
+        } else if arg == "--enable-direct-memory-access" {
+            self.fast_memory = true;
+            self.direct_memory_access = true;
         } else if let Some(address) = arg.strip_prefix("--gdb=") {
             let addrs = address
                 .to_socket_addrs()

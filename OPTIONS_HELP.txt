@@ -244,6 +244,21 @@ Graphics driver options:
         the first one that works.
 
 Debugging options:
+    --angle-driver
+        Use the Angle driver for OpenGL ES.
+
+    --disable-angle-driver
+        Disable the Angle driver for OpenGL ES.
+
+    --enable-log-file
+        Enable logging to a file.
+
+    --disable-log-file
+        Disable logging to a file.
+
+    --enable-direct-memory-access
+        Enable direct memory access for dynarmic.
+
     --disable-direct-memory-access
         Force dynarmic to always access guest memory via the memory access
         callbacks, rather than using the fast direct access path (page tables).
