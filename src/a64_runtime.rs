@@ -19,6 +19,46 @@ const A64_KIND_PIPELINE: u64 = 12;
 const A64_KIND_GENERIC: u64 = 13;
 const A64_KIND_BUNDLE: u64 = 14;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum A64GraphicsBackend {
+    MetalCompatibility,
+    OpenGLESCompatibility,
+    SoftwareCompatibility,
+}
+
+impl A64GraphicsBackend {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::MetalCompatibility => "Metal compatibility",
+            Self::OpenGLESCompatibility => "OpenGL ES compatibility",
+            Self::SoftwareCompatibility => "software compatibility",
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RuntimeState {
+    pub ios_version: (i32, i32, i32),
+    pub graphics_backend: A64GraphicsBackend,
+    pub host_dispatches: u64,
+    pub objc_messages: u64,
+    pub metal_commands: u64,
+    pub last_selector: Option<String>,
+}
+
+impl RuntimeState {
+    pub fn new(ios_version: (i32, i32, i32), graphics_backend: A64GraphicsBackend) -> Self {
+        Self {
+            ios_version,
+            graphics_backend,
+            host_dispatches: 0,
+            objc_messages: 0,
+            metal_commands: 0,
+            last_selector: None,
+        }
+    }
+}
+
 fn name(symbol: &str) -> &str {
     symbol.trim_start_matches('_')
 }
@@ -35,7 +75,8 @@ pub fn can_dispatch(symbol: &str) -> bool {
         | "objc_retainBlock" | "objc_msgSend" | "objc_msgSendSuper2"
         | "objc_msgSend_stret" | "objc_msgSendSuper2_stret" | "objc_msgSend_fpret"
         | "objc_msgSend_fp2ret" | "objc_getClass" | "objc_getRequiredClass"
-        | "objc_lookUpClass" | "sel_registerName" | "sel_getUid"
+        | "objc_lookUpClass" | "object_getClass" | "object_getClassName"
+        | "sel_registerName" | "sel_getUid" | "strcpy" | "strncpy" | "strcat"
         | "objc_autoreleasePoolPush" | "objc_autoreleasePoolPop"
         | "objc_exception_throw" | "objc_begin_catch" | "objc_end_catch"
         | "__cxa_atexit" | "atexit" | "pthread_mutex_lock"
@@ -134,14 +175,32 @@ fn objc_class_kind(mem: &Mem64, class_name: u64) -> u64 {
     }
 }
 
-fn objc_send(mem: &mut Mem64, context: &mut touchHLE_DynarmicA64Context) -> Result<(), String> {
+fn objc_send(
+    mem: &mut Mem64,
+    context: &mut touchHLE_DynarmicA64Context,
+    state: &mut RuntimeState,
+) -> Result<(), String> {
     let receiver = context.regs[0];
     let selector = c_string(mem, context.regs[1])
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .unwrap_or_default();
+    state.objc_messages = state.objc_messages.saturating_add(1);
+    state.last_selector = Some(selector.clone());
     let kind = objc_kind(mem, receiver).unwrap_or(A64_KIND_GENERIC);
     let class_name = objc_field(mem, receiver, 56);
 
+    if state.objc_messages <= 128 || state.objc_messages.is_power_of_two() {
+        log_dbg!(
+            "ARM64 Objective-C message #{}: receiver={:#x} kind={} selector={}",
+            state.objc_messages,
+            receiver,
+            kind,
+            selector
+        );
+    }
+    if matches!(selector.as_str(), "commit" | "waitUntilCompleted" | "presentDrawable:" | "endEncoding") {
+        state.metal_commands = state.metal_commands.saturating_add(1);
+    }
     let result = match selector.as_str() {
         "init" | "self" | "retain" | "autorelease" | "copy" | "mutableCopy" => receiver,
         "release" => 0,
@@ -151,8 +210,23 @@ fn objc_send(mem: &mut Mem64, context: &mut touchHLE_DynarmicA64Context) -> Resu
         "bundleIdentifier" if kind == A64_KIND_BUNDLE => objc_field(mem, receiver, 64),
         "bundlePath" | "resourcePath" if kind == A64_KIND_BUNDLE => objc_field(mem, receiver, 56),
         "executablePath" if kind == A64_KIND_BUNDLE => objc_string(mem, "/Odyssey")?,
-        "objectForInfoDictionaryKey:" if kind == A64_KIND_BUNDLE => 0,
+        "objectForInfoDictionaryKey:" if kind == A64_KIND_BUNDLE => {
+            match objc_text(mem, context.regs[2]).as_deref() {
+                Some(b"CFBundleIdentifier") => objc_field(mem, receiver, 64),
+                Some(b"CFBundleDisplayName") => objc_field(mem, receiver, 72),
+                Some(b"CFBundleShortVersionString") => objc_string(mem, "1.0")?,
+                Some(b"MinimumOSVersion") | Some(b"DTPlatformVersion") => objc_string(
+                    mem,
+                    &format!("{}.{}.{}", state.ios_version.0, state.ios_version.1, state.ios_version.2),
+                )?,
+                _ => 0,
+            }
+        }
         "pathForResource:ofType:" if kind == A64_KIND_BUNDLE => 0,
+        "systemVersion" | "operatingSystemVersionString" => objc_string(
+            mem,
+            &format!("{}.{}.{}", state.ios_version.0, state.ios_version.1, state.ios_version.2),
+        )?,
         "supportsFamily:" | "supportsFeatureSet:" => 1,
         "supportsTextureSampleCount:" => u64::from(matches!(context.regs[2], 1 | 2 | 4)),
         "name" => objc_string(mem, "RadekHLE Metal device")?,
@@ -278,8 +352,21 @@ pub fn dispatch(
     mem: &mut Mem64,
     context: &mut touchHLE_DynarmicA64Context,
     symbol: &str,
+    state: &mut RuntimeState,
 ) -> Result<bool, String> {
+    state.host_dispatches = state.host_dispatches.saturating_add(1);
     let symbol = name(symbol);
+    if state.host_dispatches <= 128 || state.host_dispatches.is_power_of_two() {
+        log_dbg!(
+            "ARM64 host dispatch #{}: symbol={} backend={} iOS={}.{}.{}",
+            state.host_dispatches,
+            symbol,
+            state.graphics_backend.label(),
+            state.ios_version.0,
+            state.ios_version.1,
+            state.ios_version.2
+        );
+    }
     match symbol {
         "malloc" | "calloc" | "valloc" | "posix_memalign" => {
             let size = if symbol == "calloc" {
@@ -391,11 +478,11 @@ pub fn dispatch(
             Ok(true)
         }
         "objc_msgSend" | "objc_msgSendSuper2" | "objc_msgSend_stret" | "objc_msgSendSuper2_stret" => {
-            objc_send(mem, context)?;
+            objc_send(mem, context, state)?;
             Ok(true)
         }
         "objc_msgSend_fpret" | "objc_msgSend_fp2ret" => {
-            objc_send(mem, context)?;
+            objc_send(mem, context, state)?;
             Ok(true)
         }
         "objc_getClass" | "objc_getRequiredClass" | "objc_lookUpClass" => {
@@ -452,6 +539,8 @@ pub fn dispatch(
         }
         "MTLCreateSystemDefaultDevice" => {
             let object = objc_object(mem, A64_KIND_DEVICE)?;
+            state.metal_commands = state.metal_commands.saturating_add(1);
+            log_dbg!("ARM64 Metal device creation #{} using {}", state.metal_commands, state.graphics_backend.label());
             return_value(context, object);
             Ok(true)
         }
@@ -521,6 +610,8 @@ pub fn dispatch(
             Ok(true)
         }
         "vkDeviceWaitIdle" => {
+            state.metal_commands = state.metal_commands.saturating_add(1);
+            log_dbg!("ARM64 Vulkan device idle call #{}", state.metal_commands);
             return_value(context, 0);
             Ok(true)
         }

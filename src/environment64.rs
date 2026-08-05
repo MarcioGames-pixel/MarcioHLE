@@ -1,4 +1,4 @@
-use crate::a64_runtime::{dispatch, materialize_import};
+use crate::a64_runtime::{dispatch, materialize_import, A64GraphicsBackend, RuntimeState};
 use crate::bundle::Bundle;
 use crate::cpu::A64Cpu;
 use crate::fs::Fs;
@@ -115,6 +115,32 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         .chain(app_args)
         .collect::<Vec<_>>();
     let apple = vec![format!("executable_path={}", executable_path.as_str())];
+    let ios_version = options.ios_version.unwrap_or(crate::options::LATEST_IOS_VERSION);
+    let uses_metal = executable
+        .dynamic_libraries
+        .iter()
+        .any(|library| library.contains("/Metal.framework/") || library.ends_with("/Metal"))
+        || executable
+            .bindings
+            .iter()
+            .any(|binding| binding.symbol.contains("MTL"));
+    let graphics_backend = if uses_metal {
+        A64GraphicsBackend::MetalCompatibility
+    } else {
+        A64GraphicsBackend::OpenGLESCompatibility
+    };
+    let mut runtime_state = RuntimeState::new(ios_version, graphics_backend);
+    echo!(
+        "ARM64 graphics backend selected: {} (Metal calls use the compatibility layer; the SDL presentation surface remains OpenGL ES)",
+        graphics_backend.label()
+    );
+    log_dbg!(
+        "ARM64 compatibility profile: iOS {}.{}.{}; pointer size=8; stack alignment=16; bindings={}",
+        ios_version.0,
+        ios_version.1,
+        ios_version.2,
+        executable.bindings.len()
+    );
     let (sp, argv_ptr, envp_ptr, apple_ptr) = prepare_stack(&mut memory, &argv, &[], &apple)?;
 
     let return_stub = write_svc_stub(&mut memory, SVC_RETURN_TO_HOST)?;
@@ -146,7 +172,9 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             host_stubs.insert(svc as i32, (binding.symbol.clone(), symbol));
             (svc, stub)
         };
-        let target = stub.checked_add(binding.addend as u64).ok_or("ARM64 import target overflows")?;
+        let target = stub
+            .checked_add_signed(binding.addend)
+            .ok_or("ARM64 import target overflows")?;
         memory.write_u64(binding.address, target).map_err(str::to_owned)?;
     }
 
@@ -246,9 +274,16 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 }
                 if repeated_pc > 100_000 {
                     return Err(format!(
-                        "ARM64 runtime stalled at pc {:#x}; last host binding was {}",
+                        "ARM64 runtime stalled at pc {:#x}; sp={:#x} lr={:#x} x0={:#x} x1={:#x}; last host binding was {}; objc_messages={} metal_commands={} backend={}",
                         context.pc,
+                        context.sp,
+                        context.regs[30],
+                        context.regs[0],
+                        context.regs[1],
                         host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>"),
+                        runtime_state.objc_messages,
+                        runtime_state.metal_commands,
+                        runtime_state.graphics_backend.label(),
                     ));
                 }
                 let symbol = host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>");
@@ -268,12 +303,21 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                         context.regs[5],
                     );
                 }
-                let handled = dispatch(&mut memory, &mut context, symbol)?;
+                let handled = dispatch(&mut memory, &mut context, symbol, &mut runtime_state)?;
                 if !handled {
                     echo!("Warning: ARM64 host function {} is not implemented; returning zero", symbol);
                 }
                 if host_dispatches > MAX_HOST_DISPATCHES {
                     return Err(format!("ARM64 runtime made too many host calls; last binding was {}", symbol));
+                }
+                if host_dispatches.is_power_of_two() {
+                    log_dbg!(
+                        "ARM64 runtime counters: dispatches={}, objc_messages={}, metal_commands={}, backend={}",
+                        runtime_state.host_dispatches,
+                        runtime_state.objc_messages,
+                        runtime_state.metal_commands,
+                        runtime_state.graphics_backend.label()
+                    );
                 }
                 context.pc = context.regs[30];
                 cpu.load_context(&context);
