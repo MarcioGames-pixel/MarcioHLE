@@ -47,22 +47,29 @@ pub fn architecture_name(architecture: MachOArchitecture) -> &'static str {
     }
 }
 
-pub fn detect_architecture(bytes: &[u8]) -> Result<MachOArchitecture, &'static str> {
+pub fn detect_architecture(
+    bytes: &[u8],
+    prefer_arm32: bool,
+) -> Result<MachOArchitecture, &'static str> {
     let mut cursor = Cursor::new(bytes);
     let file = OFile::parse(&mut cursor).map_err(|_| "Could not parse Mach-O file")?;
     let cputype = match file {
         OFile::MachFile { header, .. } => header.cputype,
-        OFile::FatFile { files, .. } => files
-            .iter()
-            .map(|(arch, _)| arch.cputype)
-            .find(|&cpu| cpu == mach_object::CPU_TYPE_ARM64)
-            .or_else(|| {
-                files
-                    .iter()
-                    .map(|(arch, _)| arch.cputype)
+        OFile::FatFile { files, .. } => {
+            let mut architectures = files.iter().map(|(arch, _)| arch.cputype);
+            if prefer_arm32 {
+                architectures
+                    .clone()
                     .find(|&cpu| cpu == mach_object::CPU_TYPE_ARM)
-            })
-            .ok_or("No ARM architecture in the fat binary")?,
+                    .or_else(|| architectures.find(|&cpu| cpu == mach_object::CPU_TYPE_ARM64))
+            } else {
+                architectures
+                    .clone()
+                    .find(|&cpu| cpu == mach_object::CPU_TYPE_ARM64)
+                    .or_else(|| architectures.find(|&cpu| cpu == mach_object::CPU_TYPE_ARM))
+            }
+            .ok_or("No ARM architecture in the fat binary")?
+        }
         OFile::ArFile { .. } | OFile::SymDef { .. } => {
             return Err("Unexpected Mach-O file kind: not an executable")
         }

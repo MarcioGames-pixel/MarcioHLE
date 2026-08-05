@@ -204,6 +204,7 @@ struct AppPickerDelegateHostObject {
     angle_driver: Option<bool>,
     log_file: Option<bool>,
     fast_memory: Option<bool>,
+    force_32_bit: Option<bool>,
     device_model_tag: Option<i32>,
     device_model_toggle: bool,
     device_model_scroll_up: bool,
@@ -324,6 +325,10 @@ const CLASSES: ClassExports = objc_classes! {
 - (())fastMemory:(id)switch { // UISwitch*
     let switch_state: bool = msg![env; switch isOn];
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).fast_memory = Some(switch_state);
+}
+- (())force32Bit:(id)switch {
+    let switch_state: bool = msg![env; switch isOn];
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).force_32_bit = Some(switch_state);
 }
 - (())deviceModel:(id)sender { // UIButton*
     let tag: NSInteger = msg![env; sender tag];
@@ -672,6 +677,7 @@ fn app_picker_inner(
     let mut quick_options_angle_driver = false;
     let mut quick_options_log_file = true;
     let mut quick_options_fast_memory = true;
+    let mut quick_options_force_32_bit = false;
     let mut quick_options_device_tag: Option<i32> = None;
     let mut quick_options_device_model_open = false;
     let mut quick_options_device_model_scroll: isize = 0;
@@ -991,6 +997,8 @@ fn app_picker_inner(
             quick_options_log_file = enabled;
         } else if let Some(enabled) = std::mem::take(&mut host_obj.fast_memory) {
             quick_options_fast_memory = enabled;
+        } else if let Some(enabled) = std::mem::take(&mut host_obj.force_32_bit) {
+            quick_options_force_32_bit = enabled;
         } else if let Some(fullscreen) = std::mem::take(&mut host_obj.fullscreen) {
             quick_options_fullscreen = match fullscreen {
                 false => None,
@@ -1047,6 +1055,9 @@ fn app_picker_inner(
     } else {
         "--disable-direct-memory-access"
     }.to_string());
+    if quick_options_force_32_bit {
+        option_args.push("--force-32-bit".to_string());
+    }
 
     if let Some(tag) = quick_options_device_tag {
         let tag = tag as NSInteger;
@@ -1781,6 +1792,8 @@ fn setup_quick_options(
         RowKind::Switch("logFile:", true),
         RowKind::Label("Fast memory"),
         RowKind::Switch("fastMemory:", true),
+        RowKind::Label("Force 32-bit"),
+        RowKind::Switch("force32Bit:", false),
         RowKind::Label("Show FPS"),
         RowKind::Switch("showFPS:", false),
         RowKind::Label("Use analog sticks for tilt controls"),
@@ -1915,8 +1928,11 @@ fn update_device_model_menu(
     selected: Option<i32>,
     scroll: isize,
 ) {
+    let thumb_frame: CGRect = msg![env; thumb frame];
+    let list_width = thumb_frame.origin.x;
+    let scrollbar_width = thumb_frame.size.width;
+    let thumb_height = thumb_frame.size.height;
     let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * DEVICE_MENU_ITEM_HEIGHT;
-    let list_width: CGFloat = 256.0;
     let max_scroll = (items.len() as isize).saturating_sub(DEVICE_MENU_VISIBLE_ITEMS as isize);
 
     for (j, &item) in items.iter().enumerate() {
@@ -1944,7 +1960,6 @@ fn update_device_model_menu(
     }
 
     // Position the scrollbar thumb proportionally to the scroll offset.
-    let thumb_height: CGFloat = 54.0;
     let travel = (visible_menu_height - thumb_height).max(0.0);
     let thumb_y = if max_scroll > 0 {
         (scroll as CGFloat / max_scroll as CGFloat) * travel
@@ -1957,7 +1972,7 @@ fn update_device_model_menu(
             y: thumb_y,
         },
         size: CGSize {
-            width: 24.0,
+            width: scrollbar_width,
             height: thumb_height,
         },
     };
@@ -2181,7 +2196,7 @@ fn make_device_model_dropdown(
         origin: CGPoint { x: list_width, y: 0.0 },
         size: CGSize {
             width: scrollbar_width,
-            height: 54.0,
+            height: (54.0 * ui_scale).min(visible_menu_height),
         },
     };
     let thumb_view: id = msg![env; thumb_view initWithFrame:thumb_frame];

@@ -52,6 +52,19 @@ pub enum DeviceFamily {
     iPhone8,
     iPhone8Plus,
     iPhoneX,
+    iPhoneSE2,
+    iPhoneSE3,
+    iPhone11,
+    iPhone11Pro,
+    iPhone11ProMax,
+    iPhone12Mini,
+    iPhone12,
+    iPhone12Pro,
+    iPhone12ProMax,
+    iPhone13Mini,
+    iPhone13,
+    iPhone13Pro,
+    iPhone13ProMax,
     iPad,
     iPad2,
     iPad3,
@@ -91,6 +104,19 @@ impl DeviceFamily {
             DeviceFamily::iPhone8 => "iPhone 8",
             DeviceFamily::iPhone8Plus => "iPhone 8 Plus",
             DeviceFamily::iPhoneX => "iPhone X",
+            DeviceFamily::iPhoneSE2 => "iPhone SE (2nd generation)",
+            DeviceFamily::iPhoneSE3 => "iPhone SE (3rd generation)",
+            DeviceFamily::iPhone11 => "iPhone 11",
+            DeviceFamily::iPhone11Pro => "iPhone 11 Pro",
+            DeviceFamily::iPhone11ProMax => "iPhone 11 Pro Max",
+            DeviceFamily::iPhone12Mini => "iPhone 12 mini",
+            DeviceFamily::iPhone12 => "iPhone 12",
+            DeviceFamily::iPhone12Pro => "iPhone 12 Pro",
+            DeviceFamily::iPhone12ProMax => "iPhone 12 Pro Max",
+            DeviceFamily::iPhone13Mini => "iPhone 13 mini",
+            DeviceFamily::iPhone13 => "iPhone 13",
+            DeviceFamily::iPhone13Pro => "iPhone 13 Pro",
+            DeviceFamily::iPhone13ProMax => "iPhone 13 Pro Max",
             DeviceFamily::iPad => "iPad",
             DeviceFamily::iPad2 => "iPad 2",
             DeviceFamily::iPad3 => "iPad 3",
@@ -153,6 +179,19 @@ impl DeviceFamily {
                 | DeviceFamily::iPhone8Plus
                 | DeviceFamily::iPhoneSE
                 | DeviceFamily::iPhoneX
+                | DeviceFamily::iPhoneSE2
+                | DeviceFamily::iPhoneSE3
+                | DeviceFamily::iPhone11
+                | DeviceFamily::iPhone11Pro
+                | DeviceFamily::iPhone11ProMax
+                | DeviceFamily::iPhone12Mini
+                | DeviceFamily::iPhone12
+                | DeviceFamily::iPhone12Pro
+                | DeviceFamily::iPhone12ProMax
+                | DeviceFamily::iPhone13Mini
+                | DeviceFamily::iPhone13
+                | DeviceFamily::iPhone13Pro
+                | DeviceFamily::iPhone13ProMax
                 | DeviceFamily::iPodTouch4
                 | DeviceFamily::iPodTouch5
                 | DeviceFamily::iPad3
@@ -169,6 +208,11 @@ impl DeviceFamily {
             DeviceFamily::iPhone6 | DeviceFamily::iPhone6s | DeviceFamily::iPhone7 | DeviceFamily::iPhone8 => (375, 667),
             DeviceFamily::iPhone6Plus | DeviceFamily::iPhone6sPlus | DeviceFamily::iPhone7Plus | DeviceFamily::iPhone8Plus => (414, 736),
             DeviceFamily::iPhoneX => (375, 812),
+            DeviceFamily::iPhoneSE2 | DeviceFamily::iPhoneSE3 => (375, 667),
+            DeviceFamily::iPhone11 | DeviceFamily::iPhone12 | DeviceFamily::iPhone13 => (390, 844),
+            DeviceFamily::iPhone11Pro | DeviceFamily::iPhone12Pro | DeviceFamily::iPhone13Pro => (375, 812),
+            DeviceFamily::iPhone11ProMax | DeviceFamily::iPhone12ProMax | DeviceFamily::iPhone13ProMax => (414, 896),
+            DeviceFamily::iPhone12Mini | DeviceFamily::iPhone13Mini => (360, 780),
             _ if self.is_ipad() => (768, 1024),
             _ if self.is_phone_568() => (320, 568),
             _ => (320, 480),
@@ -179,6 +223,11 @@ impl DeviceFamily {
     pub fn scale_factor(&self) -> f32 {
         match self {
             DeviceFamily::iPhone6Plus | DeviceFamily::iPhone6sPlus | DeviceFamily::iPhone7Plus | DeviceFamily::iPhone8Plus | DeviceFamily::iPhoneX => 3.0,
+            DeviceFamily::iPhoneSE2 | DeviceFamily::iPhoneSE3 => 2.0,
+            DeviceFamily::iPhone11 | DeviceFamily::iPhone11Pro | DeviceFamily::iPhone11ProMax
+            | DeviceFamily::iPhone12Mini | DeviceFamily::iPhone12 | DeviceFamily::iPhone12Pro
+            | DeviceFamily::iPhone12ProMax | DeviceFamily::iPhone13Mini | DeviceFamily::iPhone13
+            | DeviceFamily::iPhone13Pro | DeviceFamily::iPhone13ProMax => 3.0,
             _ if self.is_retina() => 2.0,
             _ => 1.0,
         }
@@ -204,6 +253,19 @@ impl DeviceFamily {
             DeviceFamily::iPhone8 => "iPhone10,1",
             DeviceFamily::iPhone8Plus => "iPhone10,2",
             DeviceFamily::iPhoneX => "iPhone10,3",
+            DeviceFamily::iPhoneSE2 => "iPhone12,8",
+            DeviceFamily::iPhoneSE3 => "iPhone14,6",
+            DeviceFamily::iPhone11 => "iPhone12,1",
+            DeviceFamily::iPhone11Pro => "iPhone12,3",
+            DeviceFamily::iPhone11ProMax => "iPhone12,5",
+            DeviceFamily::iPhone12Mini => "iPhone13,1",
+            DeviceFamily::iPhone12 => "iPhone13,2",
+            DeviceFamily::iPhone12Pro => "iPhone13,3",
+            DeviceFamily::iPhone12ProMax => "iPhone13,4",
+            DeviceFamily::iPhone13Mini => "iPhone14,4",
+            DeviceFamily::iPhone13 => "iPhone14,5",
+            DeviceFamily::iPhone13Pro => "iPhone14,2",
+            DeviceFamily::iPhone13ProMax => "iPhone14,3",
             DeviceFamily::iPad => "iPad1,1",
             DeviceFamily::iPad2 => "iPad2,1",
             DeviceFamily::iPad3 => "iPad3,1",
@@ -260,7 +322,14 @@ impl DeviceFamily {
             | DeviceFamily::iPhone6s
             | DeviceFamily::iPhoneSE
             | DeviceFamily::iPhone7
-            | DeviceFamily::iPhone8 => 512 * MIB,
+            | DeviceFamily::iPhone8
+            | DeviceFamily::iPhoneSE2
+            | DeviceFamily::iPhoneSE3
+            | DeviceFamily::iPhone11
+            | DeviceFamily::iPhone12Mini
+            | DeviceFamily::iPhone12
+            | DeviceFamily::iPhone13Mini
+            | DeviceFamily::iPhone13 => 512 * MIB,
             // iPad 5 (2017) and the Retina iPad minis shipped with 1 GiB. We
             // intentionally cap this at 1 GiB even though the address space is
             // 4 GiB, leaving headroom for the guest heap, stacks and mapped
@@ -273,6 +342,14 @@ impl DeviceFamily {
             | DeviceFamily::iPad5
             | DeviceFamily::iPadMini2
             | DeviceFamily::iPadMini3 => 1024 * MIB,
+            // iPhone 11 Pro / 11 Pro Max / 12 Pro / 12 Pro Max / 13 Pro / 13 Pro Max
+            // also shipped with 1 GiB.
+            DeviceFamily::iPhone11Pro
+            | DeviceFamily::iPhone11ProMax
+            | DeviceFamily::iPhone12Pro
+            | DeviceFamily::iPhone12ProMax
+            | DeviceFamily::iPhone13Pro
+            | DeviceFamily::iPhone13ProMax => 1024 * MIB,
         }
     }
 
@@ -330,6 +407,19 @@ impl DeviceFamily {
             DeviceFamily::iPhone8 => "iphone-8",
             DeviceFamily::iPhone8Plus => "iphone-8-plus",
             DeviceFamily::iPhoneX => "iphone-x",
+            DeviceFamily::iPhoneSE2 => "iphone-se-2",
+            DeviceFamily::iPhoneSE3 => "iphone-se-3",
+            DeviceFamily::iPhone11 => "iphone-11",
+            DeviceFamily::iPhone11Pro => "iphone-11-pro",
+            DeviceFamily::iPhone11ProMax => "iphone-11-pro-max",
+            DeviceFamily::iPhone12Mini => "iphone-12-mini",
+            DeviceFamily::iPhone12 => "iphone-12",
+            DeviceFamily::iPhone12Pro => "iphone-12-pro",
+            DeviceFamily::iPhone12ProMax => "iphone-12-pro-max",
+            DeviceFamily::iPhone13Mini => "iphone-13-mini",
+            DeviceFamily::iPhone13 => "iphone-13",
+            DeviceFamily::iPhone13Pro => "iphone-13-pro",
+            DeviceFamily::iPhone13ProMax => "iphone-13-pro-max",
             DeviceFamily::iPad => "ipad-1",
             DeviceFamily::iPad2 => "ipad-2",
             DeviceFamily::iPad3 => "ipad-3",
@@ -366,6 +456,19 @@ impl DeviceFamily {
         DeviceFamily::iPhone8,
         DeviceFamily::iPhone8Plus,
         DeviceFamily::iPhoneX,
+        DeviceFamily::iPhoneSE2,
+        DeviceFamily::iPhoneSE3,
+        DeviceFamily::iPhone11,
+        DeviceFamily::iPhone11Pro,
+        DeviceFamily::iPhone11ProMax,
+        DeviceFamily::iPhone12Mini,
+        DeviceFamily::iPhone12,
+        DeviceFamily::iPhone12Pro,
+        DeviceFamily::iPhone12ProMax,
+        DeviceFamily::iPhone13Mini,
+        DeviceFamily::iPhone13,
+        DeviceFamily::iPhone13Pro,
+        DeviceFamily::iPhone13ProMax,
         DeviceFamily::iPad,
         DeviceFamily::iPad2,
         DeviceFamily::iPad3,
@@ -413,6 +516,19 @@ impl TryFrom<&str> for DeviceFamily {
             "iphone-8" | "iphone10,1" => Ok(DeviceFamily::iPhone8),
             "iphone-8-plus" | "iphone10,2" => Ok(DeviceFamily::iPhone8Plus),
             "iphone-x" | "iphone10,3" => Ok(DeviceFamily::iPhoneX),
+            "iphone-se-2" | "iphone12,8" => Ok(DeviceFamily::iPhoneSE2),
+            "iphone-se-3" | "iphone14,6" => Ok(DeviceFamily::iPhoneSE3),
+            "iphone-11" | "iphone12,1" => Ok(DeviceFamily::iPhone11),
+            "iphone-11-pro" | "iphone12,3" => Ok(DeviceFamily::iPhone11Pro),
+            "iphone-11-pro-max" | "iphone12,5" => Ok(DeviceFamily::iPhone11ProMax),
+            "iphone-12-mini" | "iphone13,1" => Ok(DeviceFamily::iPhone12Mini),
+            "iphone-12" | "iphone13,2" => Ok(DeviceFamily::iPhone12),
+            "iphone-12-pro" | "iphone13,3" => Ok(DeviceFamily::iPhone12Pro),
+            "iphone-12-pro-max" | "iphone13,4" => Ok(DeviceFamily::iPhone12ProMax),
+            "iphone-13-mini" | "iphone14,4" => Ok(DeviceFamily::iPhone13Mini),
+            "iphone-13" | "iphone14,5" => Ok(DeviceFamily::iPhone13),
+            "iphone-13-pro" | "iphone14,2" => Ok(DeviceFamily::iPhone13Pro),
+            "iphone-13-pro-max" | "iphone14,3" => Ok(DeviceFamily::iPhone13ProMax),
             "ipad" => Ok(DeviceFamily::iPad2),
             "ipad-1" | "ipad1,1" => Ok(DeviceFamily::iPad),
             "ipad-2" | "ipad2,1" => Ok(DeviceFamily::iPad2),

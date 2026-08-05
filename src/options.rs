@@ -67,6 +67,7 @@ pub struct Options {
     pub log_file: bool,
     pub fast_memory: bool,
     pub direct_memory_access: bool,
+    pub force_32_bit: bool,
     pub gdb_listen_addrs: Option<Vec<SocketAddr>>,
     pub preferred_languages: Option<Vec<String>>,
     pub headless: bool,
@@ -147,6 +148,7 @@ impl Default for Options {
             log_file: true,
             fast_memory: true,
             direct_memory_access: true,
+            force_32_bit: false,
             gdb_listen_addrs: None,
             preferred_languages: None,
             headless: false,
@@ -364,6 +366,10 @@ impl Options {
             }
         } else if arg == "--force-composition" {
             self.force_composition = true;
+        } else if arg == "--force-32-bit" {
+            self.force_32_bit = true;
+        } else if arg == "--disable-force-32-bit" {
+            self.force_32_bit = false;
         } else if arg == "--prefer-gles2-context" {
             self.prefer_gles2_context = true;
         } else if arg == "--allow-network-access" {

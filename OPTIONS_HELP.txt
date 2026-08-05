@@ -82,6 +82,10 @@ Device options:
         Select the iOS version reported to the game. The default is "Latest",
         currently the highest compatibility version exposed by HyperHLE.
 
+    --force-32-bit
+        Prefer the 32-bit ARM loader when the selected application includes a
+        compatible ARM32 slice. An ARM64-only executable cannot be run as 32-bit.
+
 
 Game controller options:
     --deadzone=...
