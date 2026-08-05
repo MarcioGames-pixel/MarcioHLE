@@ -347,15 +347,23 @@ fn show_app_picker_gui(
         image
     };
     let mut options = options;
-    if options.host_screen_size.is_none() {
-        if let Some((width, height)) = crate::window::host_screen_size() {
-            options.host_screen_size = Some((width, height));
-            log!("App picker: using host display resolution {}x{} for rendering.", width, height);
-        } else {
-            log!("App picker: host display resolution unavailable; using the emulated device resolution.");
-        }
-    }
-    let mut options = options;
+    let picker_canvas_size = crate::window::host_screen_size()
+        .map(|(width, height)| {
+            let short_side = width.min(height).max(1);
+            let long_side = width.max(height);
+            let logical_width = 320u32;
+            let logical_height = ((logical_width as f32 * long_side as f32 / short_side as f32)
+                .round() as u32)
+                .max(480);
+            (logical_width, logical_height)
+        })
+        .unwrap_or((320, 568));
+    options.host_screen_size = Some(picker_canvas_size);
+    log!(
+        "App picker: using fixed {}x{} logical canvas, preserving host aspect ratio.",
+        picker_canvas_size.0,
+        picker_canvas_size.1
+    );
     if !options.fullscreen && !crate::window::Window::rotatable_fullscreen() {
         options.fullscreen = true;
         log!("App picker: enabling fullscreen so the picker uses the complete host display");
@@ -390,7 +398,7 @@ fn app_picker_inner(
     let window: id = msg_class![env; UIWindow alloc];
     let window: id = msg![env; window initWithFrame:bounds];
 
-    let app_frame: CGRect = msg![env; screen applicationFrame];
+    let app_frame: CGRect = bounds;
     let CGSize { width: app_frame_width, height: app_frame_height } = app_frame.size;
     let ui_scale = picker_ui_scale(app_frame.size);
     log!(
@@ -508,6 +516,8 @@ fn app_picker_inner(
         let font_size: CGFloat = 12.0 * ui_scale;
         let font: id = msg_class![env; UIFont systemFontOfSize:font_size];
         () = msg![env; label setFont:font];
+        () = msg![env; label setAdjustsFontSizeToFitWidth:true];
+        () = msg![env; label setMinimumFontSize:8.0];
         let text_color: id = if have_wallpaper {
             msg_class![env; UIColor whiteColor]
         } else {
@@ -1030,15 +1040,15 @@ fn make_icon_grid(
     let ui_scale = picker_ui_scale(app_frame.size);
     let short_side = app_frame.size.width.min(app_frame.size.height);
     let icon_size = CGSize {
-        width: (short_side * 0.19).clamp(58.0, 112.0),
-        height: (short_side * 0.19).clamp(58.0, 112.0),
+        width: 70.0 * ui_scale,
+        height: 70.0 * ui_scale,
     };
     let num_cols = 4;
     let num_cols_f = num_cols as CGFloat;
     let num_rows = 4;
     let label_size = CGSize {
-        width: (icon_size.width * 1.12).max(74.0),
-        height: (14.0 * ui_scale).max(14.0),
+        width: icon_size.width + 12.0 * ui_scale,
+        height: 14.0 * ui_scale,
     };
     let icon_gap_x: CGFloat = (short_side * 0.028).clamp(8.0, 22.0);
     let icon_gap_y: CGFloat = (short_side * 0.012).clamp(4.0, 12.0) + label_size.height;
@@ -1096,7 +1106,7 @@ fn make_icon_grid(
         let label: id = msg_class![env; UILabel alloc];
         let label: id = msg![env; label initWithFrame:label_frame];
         () = msg![env; label setTextAlignment:UITextAlignmentCenter];
-        let font_size: CGFloat = (label_size.height - 2.0 * ui_scale).max(10.0);
+        let font_size: CGFloat = (11.0 * ui_scale).max(8.0);
         let font: id = if have_wallpaper {
             msg_class![env; UIFont systemFontOfSize:font_size]
         } else {
@@ -1319,6 +1329,8 @@ fn make_button_row(
         let scaled_font_size = font_size.unwrap_or(12.0) * ui_scale;
         let font: id = msg_class![env; UIFont systemFontOfSize:scaled_font_size];
         () = msg![env; label setFont:font];
+        () = msg![env; label setAdjustsFontSizeToFitWidth:true];
+        () = msg![env; label setMinimumFontSize:8.0];
 
         let selector = env.objc.lookup_selector(selector).unwrap();
         () = msg![env; button addTarget:delegate
@@ -1749,6 +1761,8 @@ fn setup_quick_options(
                 let text = ns_string::get_static_str(env, text);
                 () = msg![env; label setText:text];
                 () = msg![env; label setTextAlignment:UITextAlignmentCenter];
+                () = msg![env; label setAdjustsFontSizeToFitWidth:true];
+                () = msg![env; label setMinimumFontSize:8.0];
                 () = msg![env; main_view addSubview:label];
             }
             RowKind::Buttons(buttons) => {
