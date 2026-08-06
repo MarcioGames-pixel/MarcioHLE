@@ -359,9 +359,14 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         let trace_this_instruction = trace_count < STARTUP_TRACE_INSTRUCTIONS;
         let instruction_pc = context.pc;
         let instruction = memory.read_u32(instruction_pc).unwrap_or(0);
+        let mut startup_ticks = 1_u64;
         let result = cpu.run_or_step(
             &mut memory,
-            if trace_this_instruction { None } else { ticks.as_mut() },
+            if trace_this_instruction {
+                Some(&mut startup_ticks)
+            } else {
+                ticks.as_mut()
+            },
         );
         cpu.save_context(&mut context);
         if result == -1 {
