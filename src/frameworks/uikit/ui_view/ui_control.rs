@@ -78,7 +78,7 @@ fn send_actions(env: &mut Environment, this: id, event: id, control_event: UICon
         .collect();
 
     if !action_targets.is_empty() {
-        log!(
+        log_dbg!(
             "UIControl {:?} dispatching {} action(s) for control event mask {:#x}",
             this,
             action_targets.len(),

@@ -47,6 +47,9 @@ pub struct RuntimeState {
     pub present_requested: bool,
     pub clear_color: [f32; 4],
     pub last_selector: Option<String>,
+    pub last_symbol: Option<String>,
+    pub last_successful_symbol: Option<String>,
+    pub current_module: Option<String>,
 }
 
 impl RuntimeState {
@@ -61,6 +64,9 @@ impl RuntimeState {
             present_requested: false,
             clear_color: [0.0, 0.0, 0.0, 1.0],
             last_selector: None,
+            last_symbol: None,
+            last_successful_symbol: None,
+            current_module: None,
         }
     }
 
@@ -383,6 +389,7 @@ pub fn dispatch(
 ) -> Result<bool, String> {
     state.host_dispatches = state.host_dispatches.saturating_add(1);
     let symbol = name(symbol);
+    state.last_symbol = Some(symbol.to_owned());
     if state.host_dispatches <= 128 || state.host_dispatches.is_power_of_two() {
         log_dbg!(
             "ARM64 host dispatch #{}: symbol={} backend={} iOS={}.{}.{}",

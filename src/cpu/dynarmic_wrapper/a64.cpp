@@ -175,7 +175,13 @@ private:
   bool MemoryWriteExclusive128(VAddr a, A64Vector v, A64Vector e) override { if (MemoryRead128(a) != e) return false; MemoryWrite128(a, v); return true; }
 
   void InterpreterFallback(VAddr pc, size_t count) override {
-    trace("interpreter fallback: pc=%#llx instruction_count=%zu", static_cast<unsigned long long>(pc), count);
+    bool error = false;
+    const auto instruction = touchHLE_cpu_read_u32_64(mem, pc, &error);
+    trace("unsupported instruction: pc=%#llx instruction=%#010x fetch=%s count=%zu sp=%#llx lr=%#llx regs={%s}",
+          static_cast<unsigned long long>(pc), instruction, error ? "fault" : "ok", count,
+          static_cast<unsigned long long>(cpu->GetSP()),
+          static_cast<unsigned long long>(cpu->GetRegister(30)),
+          register_dump(*cpu).c_str());
     cpu->HaltExecution(HaltReasonUndefinedInstruction);
   }
   void CallSVC(std::uint32_t svc) override {
@@ -187,10 +193,14 @@ private:
     cpu->HaltExecution(HaltReasonSvc);
   }
   void ExceptionRaised(VAddr pc, Dynarmic::A64::Exception e) override {
-    trace("exception: type=%u pc=%#llx sp=%#llx lr=%#llx", unsigned(e),
-          static_cast<unsigned long long>(pc),
+    bool error = false;
+    const auto instruction = touchHLE_cpu_read_u32_64(mem, pc, &error);
+    trace("exception: type=%u pc=%#llx instruction=%#010x fetch=%s sp=%#llx lr=%#llx fp=%#llx regs={%s}",
+          unsigned(e), static_cast<unsigned long long>(pc), instruction, error ? "fault" : "ok",
           static_cast<unsigned long long>(cpu->GetSP()),
-          static_cast<unsigned long long>(cpu->GetRegister(30)));
+          static_cast<unsigned long long>(cpu->GetRegister(30)),
+          static_cast<unsigned long long>(cpu->GetRegister(29)),
+          register_dump(*cpu).c_str());
     if (e == Dynarmic::A64::Exception::NoExecuteFault) {
       cpu->HaltExecution(Dynarmic::HaltReason::MemoryAbort);
     } else if (e == Dynarmic::A64::Exception::Breakpoint) {
@@ -214,6 +224,7 @@ public:
     tracef("jit construction: begin");
     Dynarmic::A64::UserConfig config;
     config.callbacks = &env;
+    config.optimizations = Dynarmic::no_optimizations;
     config.check_halt_on_memory_access = true;
     config.enable_cycle_counting = true;
     monitor = std::make_unique<Dynarmic::ExclusiveMonitor>(1);
