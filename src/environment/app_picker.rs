@@ -2091,6 +2091,7 @@ fn update_graphics_api_dropdown(env: &mut Environment, button: id, items: &[id],
     }
     let title = ns_string::get_static_str(env, value.label());
     () = msg![env; button setTitle:title forState:UIControlStateNormal];
+    () = msg![env; button layoutSubviews];
 }
 
 fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: id, super_view_size: CGSize, row_center: CGFloat) -> (id, id, Vec<id>) {
@@ -2110,6 +2111,7 @@ fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: i
     () = msg![env; button setTitleColor:white forState:UIControlStateNormal];
     () = msg![env; button setBackgroundColor:gray];
     () = msg![env; button setFrame:frame];
+    () = msg![env; button layoutSubviews];
     let toggle = env.objc.lookup_selector("graphicsApiToggle").unwrap();
     () = msg![env; button addTarget:delegate action:toggle forControlEvents:UIControlEventTouchUpInside];
     () = msg![env; super_view addSubview:button];
@@ -2132,6 +2134,7 @@ fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: i
         () = msg![env; item setTitleColor:white forState:UIControlStateNormal];
         () = msg![env; item setBackgroundColor:gray];
         () = msg![env; item setFrame:(CGRect { origin: CGPoint { x: 0.0, y: index as CGFloat * height }, size: CGSize { width, height } })];
+        () = msg![env; item layoutSubviews];
         () = msg![env; item setTag:(index as NSInteger)];
         () = msg![env; item addTarget:delegate action:selector forControlEvents:UIControlEventTouchUpInside];
         () = msg![env; menu addSubview:item];
