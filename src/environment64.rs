@@ -5,7 +5,7 @@ use crate::fs::Fs;
 use crate::mach_o64::MachO64;
 use crate::mem64::Mem64;
 use crate::options::Options;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use touchHLE_dynarmic_wrapper::touchHLE_DynarmicA64Context;
 
 const STACK_BASE: u64 = 0x7fff_ffff_0000;
@@ -18,6 +18,62 @@ const MAX_HOST_DISPATCHES: u64 = 1_000_000;
 const A64_HALT_USER_DEFINED1: u32 = 0x0100_0000;
 const A64_HALT_USER_DEFINED2: u32 = 0x0200_0000;
 const A64_HALT_USER_DEFINED3: u32 = 0x0400_0000;
+const STARTUP_TRACE_INSTRUCTIONS: u64 = 4096;
+const STALL_THRESHOLD: u64 = 512;
+
+fn sign_extend(value: u64, bits: u32) -> i64 {
+    let shift = 64 - bits;
+    ((value << shift) as i64) >> shift
+}
+
+fn branch_target(instruction: u32, pc: u64) -> Option<u64> {
+    let instruction = u64::from(instruction);
+    let immediate = if instruction & 0xfc00_0000 == 0x1400_0000 || instruction & 0xfc00_0000 == 0x9400_0000 {
+        sign_extend(instruction & 0x03ff_ffff, 26) << 2
+    } else if instruction & 0x7e00_0000 == 0x3400_0000 {
+        sign_extend((instruction >> 5) & 0x7f_ffff, 19) << 2
+    } else {
+        return None;
+    };
+    pc.checked_add_signed(immediate)
+}
+
+fn decode_instruction(instruction: u32, pc: u64) -> String {
+    if instruction == 0xd65f_03c0 {
+        "ret".to_string()
+    } else if instruction & 0xfc00_0000 == 0x1400_0000 {
+        format!("b {:#x}", branch_target(instruction, pc).unwrap_or(0))
+    } else if instruction & 0xfc00_0000 == 0x9400_0000 {
+        format!("bl {:#x}", branch_target(instruction, pc).unwrap_or(0))
+    } else if instruction & 0x7e00_0000 == 0x3400_0000 {
+        format!("cbz/cbnz {:#x}", branch_target(instruction, pc).unwrap_or(0))
+    } else if instruction & 0xffff_fc1f == 0xd61f_0000 {
+        "br/blr".to_string()
+    } else {
+        format!(".word {instruction:#010x}")
+    }
+}
+
+fn register_dump(context: &touchHLE_DynarmicA64Context) -> String {
+    context.regs.iter().enumerate().map(|(index, value)| format!("x{index}={value:#018x}")).collect::<Vec<_>>().join(" ")
+}
+
+fn stack_dump(memory: &Mem64, sp: u64) -> String {
+    let start = sp.saturating_sub(64);
+    match memory.read_bytes(start, 128) {
+        Ok(bytes) => bytes.chunks(16).enumerate().map(|(index, chunk)| format!("{:#x}: {}", start + index as u64 * 16, chunk.iter().map(|byte| format!("{byte:02x}")).collect::<Vec<_>>().join(" "))).collect::<Vec<_>>().join(" | "),
+        Err(error) => format!("unavailable around sp={sp:#x}: {error}"),
+    }
+}
+
+fn verify_abi(context: &touchHLE_DynarmicA64Context, module: &str) {
+    if context.sp & 15 != 0 {
+        echo!("ARM64 ABI violation in {module}: SP is not 16-byte aligned: {:#x}", context.sp);
+    }
+    if context.regs[8] != 0 {
+        log_dbg!("ARM64 ABI indirect-result register x8={:#x} in {module}", context.regs[8]);
+    }
+}
 
 fn put_string(mem: &mut Mem64, cursor: &mut u64, value: &str) -> Result<u64, String> {
     let bytes = value.as_bytes();
@@ -227,20 +283,47 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     let mut host_dispatches = 0_u64;
     let mut last_pc = context.pc;
     let mut repeated_pc = 0_u64;
+    let mut trace_count = 0_u64;
+    let mut previous_pcs = VecDeque::with_capacity(16);
+    let mut previous_branches = VecDeque::with_capacity(16);
+    echo!("ARM64 execution trace: first PC={:#x}, SP={:#x}, LR={:#x}, FP={:#x}", context.pc, context.sp, context.regs[30], context.regs[29]);
+    verify_abi(&context, "entry");
     loop {
-        let result = cpu.run_or_step(&mut memory, ticks.as_mut());
+        let trace_this_instruction = trace_count < STARTUP_TRACE_INSTRUCTIONS;
+        let instruction_pc = context.pc;
+        let instruction = memory.read_u32(instruction_pc).unwrap_or(0);
+        let result = cpu.run_or_step(&mut memory, if trace_this_instruction { None } else { ticks.as_mut() });
         cpu.save_context(&mut context);
+        if trace_this_instruction {
+            trace_count += 1;
+            if trace_count == 1 {
+                echo!("ARM64 first executed instruction: pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", instruction_pc, context.sp, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
+                echo!("ARM64 first basic block: pc={:#x}", instruction_pc);
+            }
+            if previous_pcs.len() == 16 { previous_pcs.pop_front(); }
+            previous_pcs.push_back(instruction_pc);
+            if let Some(target) = branch_target(instruction, instruction_pc) {
+                if previous_branches.len() == 16 { previous_branches.pop_front(); }
+                previous_branches.push_back((instruction_pc, target));
+                echo!("ARM64 branch #{}: {:#x} -> {:#x} ({})", trace_count, instruction_pc, target, decode_instruction(instruction, instruction_pc));
+            }
+            echo!("ARM64 instruction #{}: pc={:#x} next_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", trace_count, instruction_pc, context.pc, context.sp, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
+        }
         match result {
             -1 => {
                 ticks = Some(100_000);
                 continue;
             }
             -2 => {
+                echo!("ARM64 memory fault: current_pc={:#x} previous_pcs={:?} branch_history={:?}", context.pc, previous_pcs, previous_branches);
+                echo!("ARM64 fault registers: {}", register_dump(&context));
+                echo!("ARM64 fault stack: {}", stack_dump(&memory, context.sp));
                 return Err(format!(
-                    "ARM64 guest memory fault at pc {:#x}, sp {:#x}, lr {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
+                    "ARM64 guest memory fault at pc {:#x}, sp {:#x}, lr {:#x}, fp {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
                     context.pc,
                     context.sp,
                     context.regs[30],
+                    context.regs[29],
                     context.regs[0],
                     context.regs[1],
                     context.regs[2],
@@ -248,11 +331,15 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 ));
             }
             -3 => {
+                echo!("ARM64 undefined instruction trace: current_pc={:#x} previous_pcs={:?} branch_history={:?}", context.pc, previous_pcs, previous_branches);
+                echo!("ARM64 undefined instruction registers: {}", register_dump(&context));
+                echo!("ARM64 undefined instruction stack: {}", stack_dump(&memory, context.sp));
                 return Err(format!(
-                    "ARM64 undefined instruction at pc {:#x}, sp {:#x}, lr {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
+                    "ARM64 undefined instruction at pc {:#x}, sp {:#x}, lr {:#x}, fp {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
                     context.pc,
                     context.sp,
                     context.regs[30],
+                    context.regs[29],
                     context.regs[0],
                     context.regs[1],
                     context.regs[2],
@@ -260,11 +347,15 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 ));
             }
             -4 => {
+                echo!("ARM64 breakpoint trace: current_pc={:#x} previous_pcs={:?} branch_history={:?}", context.pc, previous_pcs, previous_branches);
+                echo!("ARM64 breakpoint registers: {}", register_dump(&context));
+                echo!("ARM64 breakpoint stack: {}", stack_dump(&memory, context.sp));
                 return Err(format!(
-                    "ARM64 breakpoint at pc {:#x}, sp {:#x}, lr {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
+                    "ARM64 breakpoint at pc {:#x}, sp {:#x}, lr {:#x}, fp {:#x}, x0 {:#x}, x1 {:#x}, x2 {:#x}, x3 {:#x}",
                     context.pc,
                     context.sp,
                     context.regs[30],
+                    context.regs[29],
                     context.regs[0],
                     context.regs[1],
                     context.regs[2],
@@ -283,14 +374,16 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                     last_pc = context.pc;
                     repeated_pc = 0;
                 }
-                if repeated_pc > 100_000 {
+                if repeated_pc > STALL_THRESHOLD {
+                    echo!("ARM64 execution stall detected: repeated_pc={} current_pc={:#x} previous_pcs={:?} branch_history={:?}", repeated_pc, context.pc, previous_pcs, previous_branches);
+                    echo!("ARM64 stall registers: {}", register_dump(&context));
+                    echo!("ARM64 stall stack: {}", stack_dump(&memory, context.sp));
                     return Err(format!(
-                        "ARM64 runtime stalled at pc {:#x}; sp={:#x} lr={:#x} x0={:#x} x1={:#x}; last host binding was {}; objc_messages={} metal_commands={} backend={}",
+                        "ARM64 runtime stalled at pc {:#x}; sp={:#x} lr={:#x} fp={:#x}; last host binding was {}; objc_messages={} metal_commands={} backend={}",
                         context.pc,
                         context.sp,
                         context.regs[30],
-                        context.regs[0],
-                        context.regs[1],
+                        context.regs[29],
                         host_stubs.get(&value).map(|(name, _)| name.as_str()).unwrap_or("<unknown>"),
                         runtime_state.objc_messages,
                         runtime_state.metal_commands,
@@ -313,8 +406,11 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                         context.regs[4],
                         context.regs[5],
                     );
+                    echo!("ARM64 host stub complete register dump: {}", register_dump(&context));
                 }
+                verify_abi(&context, symbol);
                 let handled = dispatch(&mut memory, &mut context, symbol, &mut runtime_state)?;
+                verify_abi(&context, symbol);
                 if runtime_state.take_present_request() {
                     log_dbg!(
                         "ARM64 Metal frame {} submitted: commands={}, clear={:?}",
