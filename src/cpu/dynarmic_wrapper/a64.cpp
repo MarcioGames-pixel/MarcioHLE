@@ -272,6 +272,12 @@ public:
       reason = cpu->Run();
     } else {
       reason = cpu->Step();
+      const auto step_bit = Dynarmic::HaltReason::Step;
+      const bool completed_step = Dynarmic::Has(reason, step_bit);
+      env.trace("single-step completion: completed=%s reason=%#x pc=%#llx", completed_step ? "true" : "false", static_cast<unsigned>(reason), static_cast<unsigned long long>(cpu->GetPC()));
+      if (completed_step) {
+        cpu->ClearHalt(step_bit);
+      }
     }
     env.trace("execution return #%llu: reason=%#x (%s) pc=%#llx sp=%#llx lr=%#llx code_fetches=%llu memory_faults=%llu regs={%s}",
               static_cast<unsigned long long>(execution_calls),

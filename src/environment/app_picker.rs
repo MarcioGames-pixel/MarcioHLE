@@ -951,6 +951,12 @@ fn app_picker_inner(
             quick_options_device_model_open = !quick_options_device_model_open;
             () = msg![env; (quick_options_stuff.device_model_menu)
                 setHidden:(!quick_options_device_model_open)];
+            if quick_options_device_model_open {
+                () = msg![env; (quick_options_stuff.main_view)
+                    bringSubviewToFront:(quick_options_stuff.device_model_menu)];
+                () = msg![env; (quick_options_stuff.main_view)
+                    bringSubviewToFront:(quick_options_stuff.device_model_btn)];
+            }
             let arrow = if quick_options_device_model_open { "▲" } else { "▼" };
             let title = format!(
                 "{} {}",
@@ -2124,11 +2130,11 @@ fn make_device_model_dropdown(
 
     // The dropdown menu, placed directly above the toggle button. It is clipped
     // to its own bounds and hidden until the button is tapped.
-    let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * DEVICE_MENU_ITEM_HEIGHT;
+    let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * DEVICE_MENU_ITEM_HEIGHT * ui_scale;
     let menu_frame = CGRect {
         origin: CGPoint {
             x: btn_frame.origin.x,
-            y: btn_frame.origin.y - visible_menu_height,
+            y: (btn_frame.origin.y - visible_menu_height).max(0.0),
         },
         size: CGSize {
             width: btn_width,

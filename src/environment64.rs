@@ -65,7 +65,6 @@ fn stack_dump(memory: &Mem64, sp: u64) -> String {
         Err(error) => format!("unavailable around sp={sp:#x}: {error}"),
     }
 }
-
 fn verify_abi(context: &touchHLE_DynarmicA64Context, module: &str) {
     if context.sp & 15 != 0 {
         echo!("ARM64 ABI violation in {module}: SP is not 16-byte aligned: {:#x}", context.sp);
@@ -73,6 +72,22 @@ fn verify_abi(context: &touchHLE_DynarmicA64Context, module: &str) {
     if context.regs[8] != 0 {
         log_dbg!("ARM64 ABI indirect-result register x8={:#x} in {module}", context.regs[8]);
     }
+}
+
+fn verify_guest_mappings(memory: &Mem64, pc: u64, sp: u64) {
+    let pc_mapped = memory
+        .mapped_regions()
+        .any(|region| pc >= region.base && pc.saturating_sub(region.base) < region.size);
+    let sp_mapped = memory
+        .mapped_regions()
+        .any(|region| sp >= region.base && sp.saturating_sub(region.base) < region.size);
+    echo!(
+        "ARM64 guest mappings: entry_pc={:#x} executable_page_mapped={} stack_sp={:#x} writable_stack_mapping={}",
+        pc,
+        pc_mapped,
+        sp,
+        sp_mapped,
+    );
 }
 
 fn put_string(mem: &mut Mem64, cursor: &mut u64, value: &str) -> Result<u64, String> {
@@ -290,17 +305,27 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     let mut previous_branches = VecDeque::with_capacity(16);
     echo!("ARM64 execution trace: first PC={:#x}, SP={:#x}, LR={:#x}, FP={:#x}", context.pc, context.sp, context.regs[30], context.regs[29]);
     verify_abi(&context, "entry");
+    verify_guest_mappings(&memory, context.pc, context.sp);
+    echo!("ARM64 execution mode: Dynarmic single-cycle execution is active for the startup trace; each call must return after one cycle");
     loop {
         let trace_this_instruction = trace_count < STARTUP_TRACE_INSTRUCTIONS;
         let instruction_pc = context.pc;
         let instruction = memory.read_u32(instruction_pc).unwrap_or(0);
-        let result = cpu.run_or_step(&mut memory, if trace_this_instruction { None } else { ticks.as_mut() });
+        let mut startup_ticks = 1_u64;
+        let result = cpu.run_or_step(
+            &mut memory,
+            if trace_this_instruction {
+                Some(&mut startup_ticks)
+            } else {
+                ticks.as_mut()
+            },
+        );
         cpu.save_context(&mut context);
         if trace_this_instruction {
             trace_count += 1;
             let instruction_executed = result == -1 || result >= 0;
             echo!(
-                "ARM64 step return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} instruction={:#010x} decoded={}",
+                "ARM64 single-cycle return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} instruction={:#010x} decoded={}",
                 trace_count,
                 result,
                 instruction_executed,
@@ -317,6 +342,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                     echo!("ARM64 first basic block: pc={:#x}", instruction_pc);
                 } else {
                     echo!("ARM64 first instruction did not execute: pc={:#x} result={} ({})", instruction_pc, result, if result == -5 { "unexpected halt" } else { "execution fault" });
+                    echo!("ARM64 first-instruction blocker: Dynarmic returned before completing the single-cycle execution");
                 }
             }
             if previous_pcs.len() == 16 { previous_pcs.pop_front(); }
