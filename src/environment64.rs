@@ -380,7 +380,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             trace_count += 1;
             let instruction_executed = result == -1 || result >= 0;
             echo!(
-                "ARM64 single-cycle return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} instruction={:#010x} decoded={}",
+                "ARM64 single-cycle return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}",
                 trace_count,
                 result,
                 instruction_executed,
