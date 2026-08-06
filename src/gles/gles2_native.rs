@@ -582,7 +582,7 @@ impl GLES2Native<'_> {
                 let mut len = 0;
                 gles2::GetShaderiv(shader, gles2::INFO_LOG_LENGTH, &mut len);
                 let mut log = vec![0i8; len.max(1) as usize];
-                gles2::GetShaderInfoLog(shader, len, std::ptr::null_mut(), log.as_mut_ptr());
+                gles2::GetShaderInfoLog(shader, len, std::ptr::null_mut(), log.as_mut_ptr() as *mut u8);
                 log!("GLES1 translator shader compile failed: {}", String::from_utf8_lossy(std::slice::from_raw_parts(log.as_ptr() as *const u8, log.len())));
                 gles2::DeleteShader(shader);
                 0
