@@ -11,7 +11,7 @@ authors = ["touchHLE project contributors"]
 homepage = "https://touchhle.org/"
 
 [package]
-name = "touchHLE"
+name = "radekhle"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
@@ -23,7 +23,7 @@ homepage = { workspace = true }
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "touchHLE"
+name = "radekhle"
 path = "src/bin.rs"
 
 [features]

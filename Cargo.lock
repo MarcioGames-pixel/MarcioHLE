@@ -918,6 +918,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "radekhle"
+version = "0.2.3"
+dependencies = [
+ "bzip2",
+ "caf",
+ "cargo-license",
+ "cc",
+ "cmake",
+ "corosensei",
+ "digest",
+ "encoding_rs",
+ "gl_generator",
+ "hound",
+ "lazy_static",
+ "libc",
+ "mach_object",
+ "md-5",
+ "nibarchive",
+ "plist",
+ "quick-xml 0.38.4",
+ "regex",
+ "rusqlite",
+ "rusttype",
+ "sdl2",
+ "sdl2-sys",
+ "sha1",
+ "sha2",
+ "symphonia",
+ "touchHLE_dynarmic_wrapper",
+ "touchHLE_gl_bindings",
+ "touchHLE_libxml2_wrapper",
+ "touchHLE_openal_soft_wrapper",
+ "touchHLE_pvrt_decompress_wrapper",
+ "touchHLE_stb_image_wrapper",
+ "touchHLE_version",
+ "ureq",
+ "windows-sys 0.61.2",
+ "zip",
+]
+
+[[package]]
 name = "regex"
 version = "1.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1444,47 +1485,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "touchHLE"
-version = "0.2.3"
-dependencies = [
- "bzip2",
- "caf",
- "cargo-license",
- "cc",
- "cmake",
- "corosensei",
- "digest",
- "encoding_rs",
- "gl_generator",
- "hound",
- "lazy_static",
- "libc",
- "mach_object",
- "md-5",
- "nibarchive",
- "plist",
- "quick-xml 0.38.4",
- "regex",
- "rusqlite",
- "rusttype",
- "sdl2",
- "sdl2-sys",
- "sha1",
- "sha2",
- "symphonia",
- "touchHLE_dynarmic_wrapper",
- "touchHLE_gl_bindings",
- "touchHLE_libxml2_wrapper",
- "touchHLE_openal_soft_wrapper",
- "touchHLE_pvrt_decompress_wrapper",
- "touchHLE_stb_image_wrapper",
- "touchHLE_version",
- "ureq",
- "windows-sys 0.61.2",
- "zip",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-package org.touchhle.android;
+package org.radekhle.android;
 
 import android.content.Intent;
 import android.database.Cursor;
@@ -14,14 +14,14 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 public class MainActivity extends SDLActivity {
-    private static final String TAG = "touchHLE";
+    private static final String TAG = "RadekHLE";
     private static final int GAME_FOLDER_REQUEST = 4711;
 
     @Override
     protected String[] getLibraries() {
         return new String[]{
             "SDL2",
-            "touchHLE"
+            "RadekHLE"
         };
     }
 

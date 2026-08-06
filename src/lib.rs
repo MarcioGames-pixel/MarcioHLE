@@ -91,15 +91,15 @@ pub extern "C" fn SDL_main(
     }));
     // Empty args: brings up app picker.
     match main([String::new()].into_iter()) {
-        Ok(_) => echo!("touchHLE finished"),
-        Err(e) => echo!("touchHLE errored: {e:?}"),
+        Ok(_) => echo!("RadekHLE finished"),
+        Err(e) => echo!("RadekHLE errored: {e:?}"),
     }
     0
 }
 
 const USAGE: &str = "\
 Usage:
-    touchHLE [PATH] [OPTIONS]
+    radekhle [PATH] [OPTIONS]
 
 PATH should be a path to a .app bundle or .ipa file.
 
@@ -117,7 +117,7 @@ Special options:
 ";
 pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
     echo!(
-        "touchHLE {}{}{} — https://touchhle.org/",
+        "RadekHLE 2.0 {}{}{}",
         branding(),
         if branding().is_empty() { "" } else { " " },
         VERSION,
@@ -136,7 +136,7 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
 
     {
         let base_path = paths::user_data_base_path();
-        log!("Base path for touchHLE files: {}", base_path.display());
+        log!("Base path for RadekHLE files: {}", base_path.display());
         paths::prepopulate_user_data_dir();
     }
 

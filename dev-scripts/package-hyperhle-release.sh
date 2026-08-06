@@ -15,8 +15,8 @@ cd "$ROOT"
 
 windows_exe=""
 for candidate in \
-    artifacts/windows/touchHLE.exe \
-    artifacts/windows/touchHLE_windows_bundle/touchHLE.exe
+    artifacts/windows/radekhle.exe \
+    artifacts/windows/radekhle_windows_bundle/radekhle.exe
 do
     if [ -e "$candidate" ]; then
         windows_exe="$candidate"
@@ -26,8 +26,8 @@ done
 
 linux_bin=""
 for candidate in \
-    artifacts/linux/touchHLE \
-    artifacts/linux/touchHLE_linux_bundle/touchHLE
+    artifacts/linux/radekhle \
+    artifacts/linux/radekhle_linux_bundle/radekhle
 do
     if [ -e "$candidate" ]; then
         linux_bin="$candidate"
@@ -35,18 +35,18 @@ do
     fi
 done
 
-for path in artifacts/macos/touchHLE.dmg artifacts/android/touchHLE.apk; do
+for path in artifacts/macos/radekhle.dmg artifacts/android/radekhle.apk; do
     if [ ! -e "$path" ]; then
         echo "Missing build artifact (all platform builds must succeed): $path" >&2
         exit 1
     fi
 done
 if [ -z "$windows_exe" ]; then
-    echo "Missing build artifact (all platform builds must succeed): artifacts/windows/touchHLE.exe" >&2
+    echo "Missing build artifact (all platform builds must succeed): artifacts/windows/radekhle.exe" >&2
     exit 1
 fi
 if [ -z "$linux_bin" ]; then
-    echo "Missing build artifact (all platform builds must succeed): artifacts/linux/touchHLE" >&2
+    echo "Missing build artifact (all platform builds must succeed): artifacts/linux/radekhle" >&2
     exit 1
 fi
 
@@ -104,9 +104,9 @@ cd "$ROOT/dev-scripts"
 
 prefix="HyperHLE"
 
-./prepare-release.sh --create-zip-macos "$ROOT/artifacts/macos/touchHLE.dmg" \
+./prepare-release.sh --create-zip-macos "$ROOT/artifacts/macos/radekhle.dmg" \
     -o "$ROOT/release/${prefix}_macOS_x86_64.zip"
-./prepare-release.sh --create-zip-android "$ROOT/artifacts/android/touchHLE.apk" \
+./prepare-release.sh --create-zip-android "$ROOT/artifacts/android/radekhle.apk" \
     -o "$ROOT/release/${prefix}_Android_AArch64.zip"
 ./prepare-release.sh --create-zip-windows \
     "$ROOT/$windows_exe" \

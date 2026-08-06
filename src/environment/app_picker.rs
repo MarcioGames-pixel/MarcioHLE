@@ -578,11 +578,11 @@ fn app_picker_inner(
         let label_frame = CGRect {
             origin: CGPoint {
                 x: 0.0,
-                y: app_frame.size.height - 20.0,
+                y: app_frame.size.height - 20.0 * ui_scale,
             },
             size: CGSize {
                 width: app_frame.size.width - 5.0,
-                height: 15.0,
+                height: 18.0 * ui_scale,
             },
         };
         let label: id = msg_class![env; UILabel alloc];
@@ -590,7 +590,7 @@ fn app_picker_inner(
         let text = ns_string::from_rust_string(
             env,
             format!(
-                "touchHLE {}{}{}",
+                "RadekHLE 2.0 {}{}{}",
                 crate::branding(),
                 if crate::branding().is_empty() {
                     ""
@@ -603,7 +603,7 @@ fn app_picker_inner(
         () = msg![env; label setText:text];
         () = msg![env; label setTextAlignment:UITextAlignmentRight];
         let font_size: CGFloat = 12.0 * ui_scale;
-        let font: id = msg_class![env; UIFont systemFontOfSize:font_size];
+        let font: id = picker_font(env, font_size);
         () = msg![env; label setFont:font];
         () = msg![env; label setAdjustsFontSizeToFitWidth:true];
         () = msg![env; label setMinimumFontSize:8.0];
@@ -618,7 +618,7 @@ fn app_picker_inner(
         () = msg![env; main_view addSubview:label];
     }
 
-    let divider = app_frame.size.height - 100.0;
+    let divider = app_frame.size.height - 100.0 * ui_scale;
 
     let mut icon_grid_stuff = match &mut apps {
         Ok(ref mut apps) => {
@@ -678,7 +678,7 @@ fn app_picker_inner(
         buttons_row2_center,
         &[
             ("Copyright info", "copyrightInfoShow"),
-            ("touchHLE.org", "visitWebsite"),
+            ("RadekHLE", "visitWebsite"),
         ],
         None,
     );
@@ -1143,6 +1143,13 @@ fn picker_ui_scale(size: CGSize) -> CGFloat {
     (short_side / 320.0).clamp(1.0, 4.5)
 }
 
+fn picker_font(env: &mut Environment, size: CGFloat) -> id {
+    let name = ns_string::get_static_str(env, "HelveticaNeue");
+    let font: id = msg_class![env; UIFont fontWithName:name size:size];
+    release(env, name);
+    font
+}
+
 enum TappedIcon {
     App(usize),
     ChangePage(usize),
@@ -1235,11 +1242,7 @@ fn make_icon_grid(
         let label: id = msg![env; label initWithFrame:label_frame];
         () = msg![env; label setTextAlignment:UITextAlignmentCenter];
         let font_size: CGFloat = (11.0 * ui_scale).max(8.0);
-        let font: id = if have_wallpaper {
-            msg_class![env; UIFont systemFontOfSize:font_size]
-        } else {
-            msg_class![env; UIFont boldSystemFontOfSize:font_size]
-        };
+        let font: id = picker_font(env, font_size);
         () = msg![env; label setFont:font];
         let text_color: id = if have_wallpaper {
             msg_class![env; UIColor whiteColor]
@@ -1319,7 +1322,7 @@ fn make_icon_from_glyph(
         },
     );
 
-    let font: id = msg_class![env; UIFont systemFontOfSize:font_size];
+    let font: id = picker_font(env, font_size);
     let glyph_string: id = ns_string::from_rust_string(env, [glyph].into_iter().collect());
     let glyph_size: CGSize = msg![env; glyph_string sizeWithFont:font];
     CGContextSetRGBFillColor(env, context, 1.0, 1.0, 1.0, 1.0); // white
@@ -1455,7 +1458,7 @@ fn make_button_row(
 
         let label: id = msg![env; button titleLabel];
         let scaled_font_size = font_size.unwrap_or(12.0) * ui_scale;
-        let font: id = msg_class![env; UIFont systemFontOfSize:scaled_font_size];
+        let font: id = picker_font(env, scaled_font_size);
         () = msg![env; label setFont:font];
         () = msg![env; label setAdjustsFontSizeToFitWidth:true];
         () = msg![env; label setMinimumFontSize:8.0];
@@ -1529,7 +1532,7 @@ fn setup_copyright_info(
     let bg_color: id = msg_class![env; UIColor clearColor];
     () = msg![env; text_label setBackgroundColor:bg_color];
     let font_size: CGFloat = 16.0;
-    let font: id = msg_class![env; UIFont systemFontOfSize:font_size];
+    let font: id = picker_font(env, font_size);
     () = msg![env; text_label setFont:font];
     () = msg![env; main_view addSubview:text_label];
 
@@ -1703,7 +1706,7 @@ const DEVICE_TAG_AUTO: NSInteger = 1001;
 /// list has to be scrolled.
 const DEVICE_MENU_VISIBLE_ITEMS: usize = 6;
 /// Height of a single row in the device-model dropdown.
-const DEVICE_MENU_ITEM_HEIGHT: CGFloat = 22.0;
+const DEVICE_MENU_ITEM_HEIGHT: CGFloat = 30.0;
 
 /// The choices shown in the device-model dropdown, in display order, as
 /// `(title, tag)` pairs: "Default" (no override), "Auto" (match host screen),
@@ -1726,7 +1729,7 @@ fn device_model_label_for_tag(tag: Option<i32>) -> String {
     use crate::window::DeviceFamily;
     match tag.map(|t| t as NSInteger) {
         None | Some(DEVICE_TAG_DEFAULT) => "Default".to_string(),
-        Some(DEVICE_TAG_AUTO) => "Auto".to_string(),
+        Some(DEVICE_TAG_AUTO) => "Native".to_string(),
         Some(idx) => DeviceFamily::ALL_SELECTABLE
             .get(idx as usize)
             .map(|f| f.display_name().to_string())
@@ -1741,23 +1744,35 @@ fn setup_quick_options(
     app_frame: CGRect,
 ) -> QuickOptionsStuff {
     // UIView*
-    let main_frame = CGRect {
+    let visible_frame = CGRect {
         origin: CGPoint { x: 0.0, y: 0.0 },
         size: app_frame.size,
     };
+    let content_height = app_frame.size.height.max(1800.0);
+    let main_frame = CGRect {
+        origin: CGPoint { x: 0.0, y: 0.0 },
+        size: CGSize {
+            width: app_frame.size.width,
+            height: content_height,
+        },
+    };
 
-    // Container for all the other stuff
+    // Container for all the other stuff. The settings list is taller than the
+    // screen and is hosted in a real scroll view so every option keeps a
+    // readable row instead of being compressed into overlapping controls.
 
-    let main_view: id = msg_class![env; UIView alloc];
-    let main_view: id = msg![env; main_view initWithFrame:main_frame];
-    // TODO: Isn't white the default?
+    let main_view: id = msg_class![env; UIScrollView alloc];
+    let main_view: id = msg![env; main_view initWithFrame:visible_frame];
+    let content_size = main_frame.size;
+    () = msg![env; main_view setContentSize:content_size];
+    () = msg![env; main_view setShowsVerticalScrollIndicator:true];
     let bg_color: id = msg_class![env; UIColor whiteColor];
     () = msg![env; main_view setBackgroundColor:bg_color];
     // This main_view is hidden until the copyright info button is tapped.
     () = msg![env; main_view setHidden:true];
     () = msg![env; super_view addSubview:main_view];
 
-    let ui_scale = picker_ui_scale(main_frame.size);
+    let ui_scale = picker_ui_scale(app_frame.size);
     let divider = 42.0 * ui_scale;
 
     // Close button (×) in the upper right corner. It uses an explicit border
@@ -1787,7 +1802,7 @@ fn setup_quick_options(
 
         let label: id = msg![env; button titleLabel];
         let scaled_font_size = 23.0 * ui_scale;
-        let font: id = msg_class![env; UIFont systemFontOfSize:scaled_font_size];
+        let font: id = picker_font(env, scaled_font_size);
         () = msg![env; label setFont:font];
 
         // `buttonWithType:UIButtonTypeRoundedRect` does not actually apply the
@@ -1864,7 +1879,6 @@ fn setup_quick_options(
         RowKind::Label("Fullscreen (override)"),
         RowKind::Switch("fullscreen:", false),
     ];
-    let rows_len_full = rows.len();
     let rows = if crate::window::Window::rotatable_fullscreen() {
         // Fullscreen option doesn't make sense on always-fullscreen platforms
         &rows[..rows.len() - 2]
@@ -1884,20 +1898,18 @@ fn setup_quick_options(
     let mut device_model_items: Vec<id> = Vec::new();
     let mut device_model_thumb: id = nil;
     for (i, row) in rows.iter().enumerate() {
-        let row_center = divider
-            + ((1 + i) as CGFloat)
-                * ((main_frame.size.height - divider) / ((rows_len_full + 1) as CGFloat));
+        let row_center = divider + ((1 + i) as CGFloat) * 78.0 * ui_scale;
 
         match *row {
             RowKind::Label(text) => {
                 let frame = CGRect {
                     origin: CGPoint {
                         x: 0.0,
-                        y: row_center - (24.0 * ui_scale) / 2.0,
+                        y: row_center - (28.0 * ui_scale) / 2.0,
                     },
                     size: CGSize {
                         width: main_frame.size.width,
-                        height: 24.0 * ui_scale,
+                        height: 28.0 * ui_scale,
                     },
                 };
 
@@ -1906,8 +1918,12 @@ fn setup_quick_options(
                 let text = ns_string::get_static_str(env, text);
                 () = msg![env; label setText:text];
                 () = msg![env; label setTextAlignment:UITextAlignmentCenter];
+                let label_font = picker_font(env, 14.0 * ui_scale);
+                () = msg![env; label setFont:label_font];
+                let black: id = msg_class![env; UIColor blackColor];
+                () = msg![env; label setTextColor:black];
                 () = msg![env; label setAdjustsFontSizeToFitWidth:true];
-                () = msg![env; label setMinimumFontSize:8.0];
+                () = msg![env; label setMinimumFontSize:9.0];
                 () = msg![env; main_view addSubview:label];
             }
             RowKind::Buttons(buttons) => {
@@ -2079,16 +2095,19 @@ fn update_graphics_api_dropdown(env: &mut Environment, button: id, items: &[id],
 
 fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: id, super_view_size: CGSize, row_center: CGFloat) -> (id, id, Vec<id>) {
     let ui_scale = picker_ui_scale(super_view_size);
-    let width = (super_view_size.width * 0.52).clamp(220.0, 620.0);
-    let height = 22.0 * ui_scale;
+    let width = (super_view_size.width * 0.62).clamp(240.0, 720.0);
+    let height = 30.0 * ui_scale;
     let frame = CGRect { origin: CGPoint { x: super_view_size.width / 2.0 - width / 2.0, y: row_center - height / 2.0 }, size: CGSize { width, height } };
     let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
     let title = ns_string::get_static_str(env, "Default (game)");
     () = msg![env; button setTitle:title forState:UIControlStateNormal];
     release(env, title);
-    let black: id = msg_class![env; UIColor blackColor];
+    let button_label: id = msg![env; button titleLabel];
+    let button_font = picker_font(env, 13.0 * ui_scale);
+    () = msg![env; button_label setFont:button_font];
+    let white: id = msg_class![env; UIColor whiteColor];
     let gray: id = msg_class![env; UIColor darkGrayColor];
-    () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
+    () = msg![env; button setTitleColor:white forState:UIControlStateNormal];
     () = msg![env; button setBackgroundColor:gray];
     () = msg![env; button setFrame:frame];
     let toggle = env.objc.lookup_selector("graphicsApiToggle").unwrap();
@@ -2107,7 +2126,10 @@ fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: i
         let text = ns_string::get_static_str(env, label);
         () = msg![env; item setTitle:text forState:UIControlStateNormal];
         release(env, text);
-        () = msg![env; item setTitleColor:black forState:UIControlStateNormal];
+        let item_label: id = msg![env; item titleLabel];
+        let item_font = picker_font(env, 12.0 * ui_scale);
+        () = msg![env; item_label setFont:item_font];
+        () = msg![env; item setTitleColor:white forState:UIControlStateNormal];
         () = msg![env; item setBackgroundColor:gray];
         () = msg![env; item setFrame:(CGRect { origin: CGPoint { x: 0.0, y: index as CGFloat * height }, size: CGSize { width, height } })];
         () = msg![env; item setTag:(index as NSInteger)];
@@ -2126,9 +2148,9 @@ fn make_ios_version_dropdown(
     row_center: CGFloat,
 ) -> (id, id, Vec<id>) {
     let ui_scale = picker_ui_scale(super_view_size);
-    let button_width: CGFloat = (super_view_size.width * 0.52).clamp(220.0, 620.0);
-    let button_height: CGFloat = 22.0 * ui_scale;
-    let item_height: CGFloat = 22.0 * ui_scale;
+    let button_width: CGFloat = (super_view_size.width * 0.62).clamp(240.0, 720.0);
+    let button_height: CGFloat = 30.0 * ui_scale;
+    let item_height: CGFloat = 30.0 * ui_scale;
     let button_frame = CGRect {
         origin: CGPoint {
             x: super_view_size.width / 2.0 - button_width / 2.0,
@@ -2139,10 +2161,14 @@ fn make_ios_version_dropdown(
     let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
     let title = ns_string::get_static_str(env, "iOS version");
     () = msg![env; button setTitle:title forState:UIControlStateNormal];
-    let black: id = msg_class![env; UIColor blackColor];
+    release(env, title);
+    let button_label: id = msg![env; button titleLabel];
+    let button_font = picker_font(env, 13.0 * ui_scale);
+    () = msg![env; button_label setFont:button_font];
+    let white: id = msg_class![env; UIColor whiteColor];
     let dark_gray: id = msg_class![env; UIColor darkGrayColor];
     let magenta: id = msg_class![env; UIColor magentaColor];
-    () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
+    () = msg![env; button setTitleColor:white forState:UIControlStateNormal];
     () = msg![env; button setBackgroundColor:dark_gray];
     () = msg![env; button setFrame:button_frame];
     () = msg![env; button layoutSubviews];
@@ -2176,6 +2202,10 @@ fn make_ios_version_dropdown(
         let item: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
         let text = ns_string::from_rust_string(env, (*label).to_owned());
         () = msg![env; item setTitle:text forState:UIControlStateNormal];
+        release(env, text);
+        let item_label: id = msg![env; item titleLabel];
+        let item_font = picker_font(env, 12.0 * ui_scale);
+        () = msg![env; item_label setFont:item_font];
         let item_text_color: id = msg_class![env; UIColor whiteColor];
         () = msg![env; item setTitleColor:item_text_color forState:UIControlStateNormal];
         let item_color: id = if *tag == 0 { magenta } else { dark_gray };
@@ -2203,8 +2233,8 @@ fn make_device_model_dropdown(
     row_center: CGFloat,
 ) -> (id, id, Vec<id>, id) {
     let ui_scale = picker_ui_scale(super_view_size);
-    let btn_width: CGFloat = (super_view_size.width * 0.52).clamp(220.0, 620.0);
-    let btn_height: CGFloat = 22.0 * ui_scale;
+    let btn_width: CGFloat = (super_view_size.width * 0.62).clamp(240.0, 720.0);
+    let btn_height: CGFloat = 30.0 * ui_scale;
     let scrollbar_width: CGFloat = 22.0 * ui_scale;
     let list_width: CGFloat = btn_width - scrollbar_width;
 
@@ -2240,6 +2270,9 @@ fn make_device_model_dropdown(
     let text = ns_string::from_rust_string(env, initial_title);
     () = msg![env; button setTitle:text forState:UIControlStateNormal];
     release(env, text);
+    let button_label: id = msg![env; button titleLabel];
+    let button_font = picker_font(env, 13.0 * ui_scale);
+    () = msg![env; button_label setFont:button_font];
     let black: id = msg_class![env; UIColor blackColor];
     () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
     let light_gray: id = msg_class![env; UIColor lightGrayColor];
@@ -2292,6 +2325,9 @@ fn make_device_model_dropdown(
         let text = ns_string::from_rust_string(env, title);
         () = msg![env; item_btn setTitle:text forState:UIControlStateNormal];
         release(env, text);
+        let item_label: id = msg![env; item_btn titleLabel];
+        let item_font = picker_font(env, 12.0 * ui_scale);
+        () = msg![env; item_label setFont:item_font];
         () = msg![env; item_btn setTitleColor:white forState:UIControlStateNormal];
         () = msg![env; item_btn setFrame:item_frame];
         () = msg![env; item_btn layoutSubviews];

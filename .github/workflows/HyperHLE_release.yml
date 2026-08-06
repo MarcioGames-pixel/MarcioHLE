@@ -73,7 +73,7 @@ jobs:
           set -eu
           cd dev-scripts
           ./make-macos-bundle.sh \
-            ../target/x86_64-apple-darwin/release/touchHLE \
+            ../target/x86_64-apple-darwin/release/radekhle \
             "`cargo run --package touchHLE_version`" \
             "`cargo run --package touchHLE_version -- --branding`"
           mkdir touchHLE-dmg-src
@@ -89,7 +89,7 @@ jobs:
           attempt=1
           max_attempts=5
           until hdiutil create -ov -volname touchHLE \
-              -srcfolder touchHLE-dmg-src touchHLE.dmg; do
+              -srcfolder touchHLE-dmg-src radekhle.dmg; do
             if [ "$attempt" -ge "$max_attempts" ]; then
               echo "hdiutil create still failed after $max_attempts attempts" >&2
               exit 1
@@ -102,12 +102,12 @@ jobs:
             sleep "$sleep_secs"
             attempt=$((attempt + 1))
           done
-          mv touchHLE.dmg ..
+          mv radekhle.dmg ..
           
       - uses: actions/upload-artifact@main
         with:
           name: HyperHLE_macOS_x86_64
-          path: touchHLE.dmg
+          path: radekhle.dmg
 
   build-linux:
     runs-on: ubuntu-latest
@@ -172,12 +172,12 @@ jobs:
         run: cargo build --release
 
       - name: Create bundle
-        run: cd dev-scripts && ./make-linux-bundle.sh ../target/release/touchHLE && mv touchHLE_linux_bundle/ ..
+        run: cd dev-scripts && ./make-linux-bundle.sh ../target/release/radekhle && mv radekhle_linux_bundle/ ..
 
       - uses: actions/upload-artifact@main
         with:
           name: HyperHLE_Linux_x86_64
-          path: touchHLE_linux_bundle/
+          path: radekhle_linux_bundle/
 
   build-android:
     runs-on: ubuntu-latest  
@@ -272,7 +272,7 @@ jobs:
       run: echo 'sdk.dir='$ANDROID_SDK_ROOT > android/local.properties  
 
     - name: Build for Android  
-      run: cd android && ../gradle/gradle-8.11.1/bin/gradle assembleRelease && mv app/build/outputs/apk/release/app-release.apk ../touchHLE.apk  
+      run: cd android && ../gradle/gradle-8.11.1/bin/gradle assembleRelease && mv app/build/outputs/apk/release/app-release.apk ../radekhle.apk
       env:  
         ANDROID_NDK_ROOT: '/usr/local/lib/android/sdk/ndk/25.2.9519653'  
         CMAKE: ${{ github.workspace }}/vendor/cmake/bin/cmake  
@@ -280,7 +280,7 @@ jobs:
     - uses: actions/upload-artifact@main
       with:  
         name: HyperHLE_Android_AArch64  
-        path: touchHLE.apk
+        path: radekhle.apk
 
   build-win:
     runs-on: windows-2022  
@@ -319,12 +319,12 @@ jobs:
 
     - name: Create bundle  
       shell: bash  
-      run: cd dev-scripts && ./make-windows-bundle.sh ../target/release/touchHLE.exe && mv touchHLE_windows_bundle/ ..  
+      run: cd dev-scripts && ./make-windows-bundle.sh ../target/release/radekhle.exe && mv radekhle_windows_bundle/ ..
       
     - uses: actions/upload-artifact@main
       with:  
         name: HyperHLE_Windows_x86_64  
-        path: touchHLE_windows_bundle/
+        path: radekhle_windows_bundle/
 
   check-hyperhle-release:
     runs-on: ubuntu-latest

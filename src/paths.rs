@@ -162,7 +162,7 @@ pub fn url_for_opening_user_data_dir() -> Result<String, String> {
         // See DocumentsProvider.kt, app/build.gradle and AndroidManifest.xml
         let brand = crate::branding();
         Ok(format!(
-            "content://org.touchhle.android{}{}.provider/root/root",
+            "content://org.radekhle.android{}{}.provider/root/root",
             if brand.is_empty() { "" } else { "." },
             brand.to_lowercase()
         ))

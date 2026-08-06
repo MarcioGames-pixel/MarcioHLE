@@ -13,11 +13,136 @@ use super::gles11_raw as gles11;
 use super::gles11_raw::types::*;
 use super::gles2_raw as gles2;
 use super::gles_generic::{GLchar, GLES};
-use super::util::{try_decode_pvrtc, PalettedTextureFormat};
+use super::util::{fixed_to_float, try_decode_pvrtc, PalettedTextureFormat};
 use super::GLESContext;
 use crate::window::{GLContext, GLVersion, Window};
 use std::ffi::CStr;
 use std::marker::PhantomData;
+
+const FIXED_ATTR_POSITION: GLuint = 0;
+const FIXED_ATTR_COLOR: GLuint = 1;
+const FIXED_ATTR_NORMAL: GLuint = 2;
+const FIXED_ATTR_TEXCOORD0: GLuint = 3;
+const FIXED_ATTR_TEXCOORD1: GLuint = 4;
+
+#[derive(Clone, Copy)]
+struct FixedArrayState {
+    size: GLint,
+    type_: GLenum,
+    stride: GLsizei,
+    pointer: *const GLvoid,
+    buffer_binding: GLuint,
+    enabled: bool,
+}
+
+impl Default for FixedArrayState {
+    fn default() -> Self {
+        Self { size: 4, type_: gles11::FLOAT, stride: 0, pointer: std::ptr::null(), buffer_binding: 0, enabled: false }
+    }
+}
+
+struct GLES2FixedState {
+    active_texture: GLenum,
+    client_active_texture: GLenum,
+    array_buffer: GLuint,
+    element_array_buffer: GLuint,
+    bound_textures: [GLuint; 4],
+    texture_enabled: [bool; 4],
+    texture_env_mode: [GLenum; 4],
+    current_color: [GLfloat; 4],
+    current_normal: [GLfloat; 3],
+    matrix_mode: GLenum,
+    modelview: Vec<[GLfloat; 16]>,
+    projection: Vec<[GLfloat; 16]>,
+    texture: [Vec<[GLfloat; 16]>; 4],
+    vertex: FixedArrayState,
+    color: FixedArrayState,
+    normal: FixedArrayState,
+    texcoord: [FixedArrayState; 4],
+    fixed_pipeline_active: bool,
+    program: GLuint,
+    mvp_location: GLint,
+    color_location: GLint,
+    texture_enabled_location: [GLint; 2],
+    texture_mode_location: [GLint; 2],
+    sampler_location: [GLint; 2],
+    texture_matrix_location: [GLint; 2],
+    translated: [Vec<GLfloat>; 4],
+}
+
+fn fixed_identity() -> [GLfloat; 16] {
+    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+}
+
+fn fixed_mul(a: &[GLfloat; 16], b: &[GLfloat; 16]) -> [GLfloat; 16] {
+    let mut out = [0.0; 16];
+    for c in 0..4 {
+        for r in 0..4 {
+            out[c * 4 + r] = (0..4).map(|k| a[k * 4 + r] * b[c * 4 + k]).sum();
+        }
+    }
+    out
+}
+
+fn fixed_translate(x: GLfloat, y: GLfloat, z: GLfloat) -> [GLfloat; 16] {
+    [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, y, z, 1.0]
+}
+
+fn fixed_scale(x: GLfloat, y: GLfloat, z: GLfloat) -> [GLfloat; 16] {
+    [x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0]
+}
+
+fn fixed_rotate(angle: GLfloat, x: GLfloat, y: GLfloat, z: GLfloat) -> [GLfloat; 16] {
+    let length = (x * x + y * y + z * z).sqrt();
+    if length == 0.0 { return fixed_identity(); }
+    let (x, y, z) = (x / length, y / length, z / length);
+    let a = angle.to_radians();
+    let (s, c) = (a.sin(), a.cos());
+    let t = 1.0 - c;
+    [
+        t*x*x+c, t*x*y+s*z, t*x*z-s*y, 0.0,
+        t*x*y-s*z, t*y*y+c, t*y*z+s*x, 0.0,
+        t*x*z+s*y, t*y*z-s*x, t*z*z+c, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
+fn fixed_ortho(left: GLfloat, right: GLfloat, bottom: GLfloat, top: GLfloat, near: GLfloat, far: GLfloat) -> [GLfloat; 16] {
+    [
+        2.0/(right-left), 0.0, 0.0, 0.0,
+        0.0, 2.0/(top-bottom), 0.0, 0.0,
+        0.0, 0.0, -2.0/(far-near), 0.0,
+        -(right+left)/(right-left), -(top+bottom)/(top-bottom), -(far+near)/(far-near), 1.0,
+    ]
+}
+
+fn fixed_frustum(left: GLfloat, right: GLfloat, bottom: GLfloat, top: GLfloat, near: GLfloat, far: GLfloat) -> [GLfloat; 16] {
+    [
+        2.0*near/(right-left), 0.0, 0.0, 0.0,
+        0.0, 2.0*near/(top-bottom), 0.0, 0.0,
+        (right+left)/(right-left), (top+bottom)/(top-bottom), -(far+near)/(far-near), -1.0,
+        0.0, 0.0, -2.0*far*near/(far-near), 0.0,
+    ]
+}
+
+impl Default for GLES2FixedState {
+    fn default() -> Self {
+        Self {
+            active_texture: gles11::TEXTURE0, client_active_texture: gles11::TEXTURE0,
+            array_buffer: 0, element_array_buffer: 0, bound_textures: [0; 4],
+            texture_enabled: [false; 4], texture_env_mode: [gles11::MODULATE; 4],
+            current_color: [1.0; 4], current_normal: [0.0, 0.0, 1.0],
+            matrix_mode: gles11::MODELVIEW, modelview: vec![fixed_identity()], projection: vec![fixed_identity()],
+            texture: std::array::from_fn(|_| vec![fixed_identity()]),
+            vertex: FixedArrayState { size: 4, ..Default::default() }, color: FixedArrayState { size: 4, ..Default::default() },
+            normal: FixedArrayState { size: 3, ..Default::default() }, texcoord: std::array::from_fn(|_| FixedArrayState { size: 2, ..Default::default() }),
+            fixed_pipeline_active: false, program: 0, mvp_location: -1, color_location: -1,
+            texture_enabled_location: [-1; 2], texture_mode_location: [-1; 2], sampler_location: [-1; 2], texture_matrix_location: [-1; 2],
+            translated: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+}
+
 
 pub struct GLES2NativeContext {
     gl_ctx: GLContext,
@@ -37,6 +162,7 @@ pub struct GLES2NativeContext {
     /// Whether the driver supports `GL_EXT_shader_texture_lod`. When it does
     /// not, we must patch shaders that use `texture2DLodEXT` and friends.
     texture_lod_ext_supported: bool,
+    fixed_state: GLES2FixedState,
 }
 
 impl GLESContext for GLES2NativeContext {
@@ -51,6 +177,7 @@ impl GLESContext for GLES2NativeContext {
             pvrtc_native: false,
             pvrtc_native_checked: false,
             texture_lod_ext_supported: false,
+            fixed_state: GLES2FixedState::default(),
         })
     }
 
@@ -63,6 +190,7 @@ impl GLESContext for GLES2NativeContext {
                 _gl_lifetime: PhantomData,
                 pvrtc_native: self.pvrtc_native,
                 texture_lod_ext_supported: self.texture_lod_ext_supported,
+                fixed_state: &mut self.fixed_state,
             });
         }
         unsafe {
@@ -83,6 +211,7 @@ impl GLESContext for GLES2NativeContext {
             _gl_lifetime: PhantomData,
             pvrtc_native: self.pvrtc_native,
             texture_lod_ext_supported: self.texture_lod_ext_supported,
+            fixed_state: &mut self.fixed_state,
         })
     }
 
@@ -96,6 +225,7 @@ impl GLESContext for GLES2NativeContext {
                 _gl_lifetime: PhantomData,
                 pvrtc_native: self.pvrtc_native,
                 texture_lod_ext_supported: self.texture_lod_ext_supported,
+                fixed_state: &mut self.fixed_state,
             });
         }
         make_current_fn(&self.gl_ctx);
@@ -111,6 +241,7 @@ impl GLESContext for GLES2NativeContext {
             _gl_lifetime: PhantomData,
             pvrtc_native: self.pvrtc_native,
             texture_lod_ext_supported: self.texture_lod_ext_supported,
+            fixed_state: &mut self.fixed_state,
         })
     }
 }
@@ -403,6 +534,223 @@ pub struct GLES2Native<'gl_ctx> {
     pvrtc_native: bool,
     /// Whether `GL_EXT_shader_texture_lod` is advertised by the host driver.
     texture_lod_ext_supported: bool,
+    fixed_state: &'gl_ctx mut GLES2FixedState,
+}
+
+impl GLES2FixedState {
+    fn enable(&mut self, cap: GLenum, enabled: bool) -> bool {
+        let unit = self.active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+        let client_unit = self.client_active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+        match cap {
+            gles11::TEXTURE_2D if unit < self.texture_enabled.len() => self.texture_enabled[unit] = enabled,
+            gles11::VERTEX_ARRAY => self.vertex.enabled = enabled,
+            gles11::COLOR_ARRAY => self.color.enabled = enabled,
+            gles11::NORMAL_ARRAY => self.normal.enabled = enabled,
+            gles11::TEXTURE_COORD_ARRAY if client_unit < self.texcoord.len() => self.texcoord[client_unit].enabled = enabled,
+            _ => return false,
+        }
+        true
+    }
+
+    fn is_enabled(&self, cap: GLenum) -> Option<bool> {
+        let unit = self.active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+        let client_unit = self.client_active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+        Some(match cap {
+            gles11::TEXTURE_2D if unit < self.texture_enabled.len() => self.texture_enabled[unit],
+            gles11::VERTEX_ARRAY => self.vertex.enabled,
+            gles11::COLOR_ARRAY => self.color.enabled,
+            gles11::NORMAL_ARRAY => self.normal.enabled,
+            gles11::TEXTURE_COORD_ARRAY if client_unit < self.texcoord.len() => self.texcoord[client_unit].enabled,
+            _ => return None,
+        })
+    }
+}
+
+impl GLES2Native<'_> {
+    unsafe fn ensure_fixed_program(&mut self) -> bool {
+        if self.fixed_state.program != 0 { return true; }
+        let vertex = b"attribute vec4 a_position; attribute vec4 a_color; attribute vec3 a_normal; attribute vec4 a_texcoord0; attribute vec4 a_texcoord1; uniform mat4 u_mvp; uniform mat4 u_texmatrix0; uniform mat4 u_texmatrix1; uniform vec4 u_color; varying vec4 v_color; varying vec2 v_texcoord0; varying vec2 v_texcoord1; void main(){ gl_Position=u_mvp*a_position; v_color=a_color*u_color; v_texcoord0=(u_texmatrix0*a_texcoord0).xy; v_texcoord1=(u_texmatrix1*a_texcoord1).xy; }\0";
+        let fragment = b"precision mediump float; uniform sampler2D u_sampler0; uniform sampler2D u_sampler1; uniform bool u_texture_enabled0; uniform bool u_texture_enabled1; uniform int u_texture_mode0; uniform int u_texture_mode1; varying vec4 v_color; varying vec2 v_texcoord0; varying vec2 v_texcoord1; void main(){ vec4 c=v_color; if(u_texture_enabled0){ vec4 t=texture2D(u_sampler0,v_texcoord0); if(u_texture_mode0==2)c=t; else if(u_texture_mode0==3)c+=t; else if(u_texture_mode0==4)c=mix(c,t,t.a); else c*=t; } if(u_texture_enabled1){ vec4 t=texture2D(u_sampler1,v_texcoord1); if(u_texture_mode1==2)c=t; else if(u_texture_mode1==3)c+=t; else if(u_texture_mode1==4)c=mix(c,t,t.a); else c*=t; } gl_FragColor=c; }\0";
+        let make_shader = |kind: GLenum, source: &[u8]| -> GLuint {
+            let shader = gles2::CreateShader(kind);
+            let ptr = source.as_ptr() as *const GLchar;
+            gles2::ShaderSource(shader, 1, &ptr, std::ptr::null());
+            gles2::CompileShader(shader);
+            let mut ok = 0;
+            gles2::GetShaderiv(shader, gles2::COMPILE_STATUS, &mut ok);
+            if ok == 0 {
+                let mut len = 0;
+                gles2::GetShaderiv(shader, gles2::INFO_LOG_LENGTH, &mut len);
+                let mut log = vec![0i8; len.max(1) as usize];
+                gles2::GetShaderInfoLog(shader, len, std::ptr::null_mut(), log.as_mut_ptr());
+                log!("GLES1 translator shader compile failed: {}", String::from_utf8_lossy(std::slice::from_raw_parts(log.as_ptr() as *const u8, log.len())));
+                gles2::DeleteShader(shader);
+                0
+            } else { shader }
+        };
+        let vs = make_shader(gles2::VERTEX_SHADER, vertex);
+        let fs = make_shader(gles2::FRAGMENT_SHADER, fragment);
+        if vs == 0 || fs == 0 { return false; }
+        let program = gles2::CreateProgram();
+        gles2::AttachShader(program, vs); gles2::AttachShader(program, fs);
+        gles2::BindAttribLocation(program, FIXED_ATTR_POSITION, b"a_position\0".as_ptr() as *const GLchar);
+        gles2::BindAttribLocation(program, FIXED_ATTR_COLOR, b"a_color\0".as_ptr() as *const GLchar);
+        gles2::BindAttribLocation(program, FIXED_ATTR_NORMAL, b"a_normal\0".as_ptr() as *const GLchar);
+        gles2::BindAttribLocation(program, FIXED_ATTR_TEXCOORD0, b"a_texcoord0\0".as_ptr() as *const GLchar);
+        gles2::BindAttribLocation(program, FIXED_ATTR_TEXCOORD1, b"a_texcoord1\0".as_ptr() as *const GLchar);
+        gles2::LinkProgram(program);
+        let mut linked = 0;
+        gles2::GetProgramiv(program, gles2::LINK_STATUS, &mut linked);
+        gles2::DeleteShader(vs); gles2::DeleteShader(fs);
+        if linked == 0 { log!("GLES1 translator program link failed"); gles2::DeleteProgram(program); return false; }
+        let name = |s: &'static [u8]| s.as_ptr() as *const GLchar;
+        self.fixed_state.program = program;
+        self.fixed_state.mvp_location = gles2::GetUniformLocation(program, name(b"u_mvp\0"));
+        self.fixed_state.color_location = gles2::GetUniformLocation(program, name(b"u_color\0"));
+        for i in 0..2 {
+            self.fixed_state.texture_enabled_location[i] = gles2::GetUniformLocation(program, if i == 0 { name(b"u_texture_enabled0\0") } else { name(b"u_texture_enabled1\0") });
+            self.fixed_state.texture_mode_location[i] = gles2::GetUniformLocation(program, if i == 0 { name(b"u_texture_mode0\0") } else { name(b"u_texture_mode1\0") });
+            self.fixed_state.sampler_location[i] = gles2::GetUniformLocation(program, if i == 0 { name(b"u_sampler0\0") } else { name(b"u_sampler1\0") });
+            self.fixed_state.texture_matrix_location[i] = gles2::GetUniformLocation(program, if i == 0 { name(b"u_texmatrix0\0") } else { name(b"u_texmatrix1\0") });
+        }
+        log!("GLES1 translator initialized: fixed-function GLES 1.1 -> native GLES 2.0 shader pipeline");
+        true
+    }
+
+    fn current_matrix_mut(&mut self) -> &mut [GLfloat; 16] {
+        let state = &mut self.fixed_state;
+        match state.matrix_mode {
+            gles11::PROJECTION => state.projection.last_mut().unwrap(),
+            gles11::TEXTURE => state.texture[(state.active_texture - gles11::TEXTURE0) as usize].last_mut().unwrap(),
+            _ => state.modelview.last_mut().unwrap(),
+        }
+    }
+
+    unsafe fn fixed_array_pointer(&mut self, array: FixedArrayState, first: GLint, count: GLsizei, slot: usize) -> *const GLvoid {
+        if array.pointer.is_null() || count <= 0 {
+            return std::ptr::null();
+        }
+        if array.type_ != gles11::FIXED {
+            return array.pointer;
+        }
+        let size = array.size.clamp(1, 4) as usize;
+        let stride = if array.stride == 0 { size * 4 } else { array.stride as usize };
+        let first = first.max(0) as usize;
+        let count = count as usize;
+        let total = (first + count) * size;
+        self.fixed_state.translated[slot].resize(total, 0.0);
+        if array.buffer_binding != 0 {
+            log_once!("GLES1 translator: fixed-point arrays in VBOs are not translated on native GLES2; use client-side arrays or GLES1-on-GL2");
+            return std::ptr::null();
+        }
+        let base = array.pointer as *const u8;
+        for vertex in 0..(first + count) {
+            for component in 0..size {
+                let ptr = base.add(vertex * stride + component * std::mem::size_of::<GLfixed>()) as *const GLfixed;
+                self.fixed_state.translated[slot][vertex * size + component] = fixed_to_float(ptr.read_unaligned());
+            }
+        }
+        self.fixed_state.translated[slot].as_ptr() as *const GLvoid
+    }
+
+    unsafe fn fixed_draw_elements(&mut self, mode: GLenum, count: GLsizei, type_: GLenum, indices: *const GLvoid) {
+        if count <= 0 || indices.is_null() {
+            return;
+        }
+        let mut decoded = Vec::with_capacity(count as usize);
+        for index in 0..count as usize {
+            let value = match type_ {
+                gles11::UNSIGNED_BYTE => (indices as *const u8).add(index).read_unaligned() as u16,
+                gles11::UNSIGNED_SHORT => (indices as *const u16).add(index).read_unaligned(),
+                _ => return,
+            };
+            decoded.push(value);
+        }
+        self.fixed_draw_arrays(mode, 0, count);
+        gles2::DrawElements(mode, count, gles2::UNSIGNED_SHORT, decoded.as_ptr().cast());
+    }
+
+    unsafe fn fixed_draw_arrays(&mut self, mode: GLenum, first: GLint, count: GLsizei) {
+        if count <= 0 || !self.ensure_fixed_program() {
+            return;
+        }
+        let old_program = {
+            let mut value = 0;
+            gles2::GetIntegerv(gles2::CURRENT_PROGRAM, &mut value);
+            value as GLuint
+        };
+        let old_active = {
+            let mut value = gles2::TEXTURE0 as GLint;
+            gles2::GetIntegerv(gles2::ACTIVE_TEXTURE, &mut value);
+            value as GLenum
+        };
+        let program = self.fixed_state.program;
+        let mvp = fixed_mul(&self.fixed_state.projection[0], &self.fixed_state.modelview[0]);
+        let color = self.fixed_state.current_color;
+        let normal = self.fixed_state.current_normal;
+        let vertex = self.fixed_state.vertex;
+        let color_array = self.fixed_state.color;
+        let normal_array = self.fixed_state.normal;
+        let texcoord = self.fixed_state.texcoord;
+        let bound_textures = self.fixed_state.bound_textures;
+        let texture_enabled = self.fixed_state.texture_enabled;
+        let texture_env_mode = self.fixed_state.texture_env_mode;
+        let texture_matrices = [
+            self.fixed_state.texture[0][0],
+            self.fixed_state.texture[1][0],
+        ];
+        let mvp_location = self.fixed_state.mvp_location;
+        let color_location = self.fixed_state.color_location;
+        let texture_enabled_location = self.fixed_state.texture_enabled_location;
+        let texture_mode_location = self.fixed_state.texture_mode_location;
+        let sampler_location = self.fixed_state.sampler_location;
+        let texture_matrix_location = self.fixed_state.texture_matrix_location;
+
+        gles2::UseProgram(program);
+        gles2::UniformMatrix4fv(mvp_location, 1, gles2::FALSE, mvp.as_ptr());
+        gles2::Uniform4f(color_location, color[0], color[1], color[2], color[3]);
+        for (attr, array, slot) in [
+            (FIXED_ATTR_POSITION, vertex, 0),
+            (FIXED_ATTR_COLOR, color_array, 1),
+            (FIXED_ATTR_NORMAL, normal_array, 2),
+        ] {
+            let pointer = self.fixed_array_pointer(array, first, count, slot);
+            let pointer_type = if array.type_ == gles11::FIXED { gles11::FLOAT } else { array.type_ };
+            if array.enabled && !pointer.is_null() {
+                gles2::BindBuffer(gles2::ARRAY_BUFFER, array.buffer_binding);
+                gles2::EnableVertexAttribArray(attr);
+                gles2::VertexAttribPointer(attr, array.size, pointer_type, if attr == FIXED_ATTR_COLOR && array.type_ == gles11::UNSIGNED_BYTE { gles2::TRUE } else { gles2::FALSE }, array.stride, pointer);
+            } else {
+                gles2::DisableVertexAttribArray(attr);
+                let value = if attr == FIXED_ATTR_COLOR { color } else if attr == FIXED_ATTR_NORMAL { [normal[0], normal[1], normal[2], 1.0] } else { [0.0, 0.0, 0.0, 1.0] };
+                gles2::VertexAttrib4f(attr, value[0], value[1], value[2], value[3]);
+            }
+        }
+        for i in 0..2 {
+            let unit = gles11::TEXTURE0 + i as u32;
+            gles2::ActiveTexture(unit);
+            let array = texcoord[i];
+            let attr = FIXED_ATTR_TEXCOORD0 + i as u32;
+            let pointer = self.fixed_array_pointer(array, first, count, 3 + i);
+            if array.enabled && !pointer.is_null() {
+                gles2::BindBuffer(gles2::ARRAY_BUFFER, array.buffer_binding);
+                gles2::EnableVertexAttribArray(attr);
+                gles2::VertexAttribPointer(attr, array.size, if array.type_ == gles11::FIXED { gles11::FLOAT } else { array.type_ }, gles2::FALSE, array.stride, pointer);
+            } else {
+                gles2::DisableVertexAttribArray(attr);
+                gles2::VertexAttrib4f(attr, 0.0, 0.0, 0.0, 1.0);
+            }
+            gles2::BindTexture(gles2::TEXTURE_2D, bound_textures[i]);
+            gles2::Uniform1i(sampler_location[i], i as GLint);
+            gles2::Uniform1i(texture_enabled_location[i], texture_enabled[i] as GLint);
+            let mode_value = match texture_env_mode[i] { gles11::REPLACE => 2, gles11::ADD => 3, gles11::DECAL => 4, _ => 1 };
+            gles2::Uniform1i(texture_mode_location[i], mode_value);
+            gles2::UniformMatrix4fv(texture_matrix_location[i], 1, gles2::FALSE, texture_matrices[i].as_ptr());
+        }
+        gles2::DrawArrays(mode, first, count);
+        gles2::ActiveTexture(old_active);
+        gles2::UseProgram(old_program);
+    }
 }
 
 /// Returns `true` if `cap` is an ES 1.1 fixed-function capability that has
@@ -476,18 +824,29 @@ impl GLES for GLES2Native<'_> {
         gles2::GetError()
     }
     unsafe fn Enable(&mut self, cap: GLenum) {
+        if self.fixed_state.enable(cap, true) {
+            self.fixed_state.fixed_pipeline_active = true;
+            return;
+        }
         if is_es1_only_capability(cap) {
             return;
         }
         gles2::Enable(cap)
     }
     unsafe fn IsEnabled(&mut self, cap: GLenum) -> GLboolean {
+        if let Some(enabled) = self.fixed_state.is_enabled(cap) {
+            return if enabled { gles2::TRUE } else { gles2::FALSE };
+        }
         if is_es1_only_capability(cap) {
             return gles2::FALSE;
         }
         gles2::IsEnabled(cap)
     }
     unsafe fn Disable(&mut self, cap: GLenum) {
+        if self.fixed_state.enable(cap, false) {
+            self.fixed_state.fixed_pipeline_active = true;
+            return;
+        }
         if is_es1_only_capability(cap) {
             return;
         }
@@ -582,6 +941,11 @@ impl GLES for GLES2Native<'_> {
         gles2::DeleteBuffers(n, buffers)
     }
     unsafe fn BindBuffer(&mut self, target: GLenum, buffer: GLuint) {
+        if target == gles2::ARRAY_BUFFER {
+            self.fixed_state.array_buffer = buffer;
+        } else if target == gles2::ELEMENT_ARRAY_BUFFER {
+            self.fixed_state.element_array_buffer = buffer;
+        }
         gles2::BindBuffer(target, buffer)
     }
     unsafe fn BufferData(
@@ -605,7 +969,11 @@ impl GLES for GLES2Native<'_> {
 
     // Drawing
     unsafe fn DrawArrays(&mut self, mode: GLenum, first: GLint, count: GLsizei) {
-        gles2::DrawArrays(mode, first, count)
+        if self.fixed_state.fixed_pipeline_active {
+            self.fixed_draw_arrays(mode, first, count);
+        } else {
+            gles2::DrawArrays(mode, first, count);
+        }
     }
     unsafe fn DrawElements(
         &mut self,
@@ -614,7 +982,11 @@ impl GLES for GLES2Native<'_> {
         type_: GLenum,
         indices: *const GLvoid,
     ) {
-        gles2::DrawElements(mode, count, type_, indices)
+        if self.fixed_state.fixed_pipeline_active {
+            self.fixed_draw_elements(mode, count, type_, indices);
+        } else {
+            gles2::DrawElements(mode, count, type_, indices);
+        }
     }
     unsafe fn Clear(&mut self, mask: GLbitfield) {
         gles2::Clear(mask)
@@ -661,9 +1033,16 @@ impl GLES for GLES2Native<'_> {
         gles2::DeleteTextures(n, textures)
     }
     unsafe fn ActiveTexture(&mut self, texture: GLenum) {
+        self.fixed_state.active_texture = texture;
         gles2::ActiveTexture(texture)
     }
     unsafe fn BindTexture(&mut self, target: GLenum, texture: GLuint) {
+        if target == gles2::TEXTURE_2D {
+            let unit = self.fixed_state.active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+            if unit < self.fixed_state.bound_textures.len() {
+                self.fixed_state.bound_textures[unit] = texture;
+            }
+        }
         gles2::BindTexture(target, texture)
     }
     unsafe fn TexParameteri(&mut self, target: GLenum, pname: GLenum, param: GLint) {
@@ -1596,101 +1975,190 @@ impl GLES for GLES2Native<'_> {
     // keeps the existing `present_renderbuffer` save/restore code paths quiet
     // without crashing. Real apps that rely on a true ES 2.0 driver will not
     // call these.
-    unsafe fn ClientActiveTexture(&mut self, _texture: GLenum) {}
-    unsafe fn EnableClientState(&mut self, _array: GLenum) {}
-    unsafe fn DisableClientState(&mut self, _array: GLenum) {}
-    unsafe fn GetTexEnviv(&mut self, _target: GLenum, _pname: GLenum, _params: *mut GLint) {}
-    unsafe fn GetTexEnvfv(&mut self, _target: GLenum, _pname: GLenum, _params: *mut GLfloat) {}
-    unsafe fn GetPointerv(&mut self, _pname: GLenum, _params: *mut *const GLvoid) {}
-    unsafe fn AlphaFunc(&mut self, _func: GLenum, _ref_: GLclampf) {}
-    unsafe fn AlphaFuncx(&mut self, _func: GLenum, _ref_: GLclampx) {}
-    unsafe fn Color4f(&mut self, _r: GLfloat, _g: GLfloat, _b: GLfloat, _a: GLfloat) {}
-    unsafe fn Color4x(&mut self, _r: GLfixed, _g: GLfixed, _b: GLfixed, _a: GLfixed) {}
-    unsafe fn Color4ub(&mut self, _r: GLubyte, _g: GLubyte, _b: GLubyte, _a: GLubyte) {}
+    unsafe fn ClientActiveTexture(&mut self, texture: GLenum) {
+        self.fixed_state.client_active_texture = texture;
+    }
+    unsafe fn EnableClientState(&mut self, array: GLenum) {
+        if self.fixed_state.enable(array, true) {
+            self.fixed_state.fixed_pipeline_active = true;
+        }
+    }
+    unsafe fn DisableClientState(&mut self, array: GLenum) {
+        if self.fixed_state.enable(array, false) {
+            self.fixed_state.fixed_pipeline_active = true;
+        }
+    }
+    unsafe fn GetTexEnviv(&mut self, _target: GLenum, pname: GLenum, params: *mut GLint) {
+        if !params.is_null() && pname == gles11::TEXTURE_ENV_MODE {
+            let unit = self.fixed_state.active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+            params.write(self.fixed_state.texture_env_mode[unit] as GLint);
+        }
+    }
+    unsafe fn GetTexEnvfv(&mut self, _target: GLenum, pname: GLenum, params: *mut GLfloat) {
+        if !params.is_null() && pname == gles11::TEXTURE_ENV_MODE {
+            let unit = self.fixed_state.active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+            params.write(self.fixed_state.texture_env_mode[unit] as GLfloat);
+        }
+    }
+    unsafe fn GetPointerv(&mut self, pname: GLenum, params: *mut *const GLvoid) {
+        if params.is_null() {
+            return;
+        }
+        let array = match pname {
+            gles11::VERTEX_ARRAY_POINTER => self.fixed_state.vertex,
+            gles11::COLOR_ARRAY_POINTER => self.fixed_state.color,
+            gles11::NORMAL_ARRAY_POINTER => self.fixed_state.normal,
+            _ => self.fixed_state.texcoord[self.fixed_state.client_active_texture.saturating_sub(gles11::TEXTURE0) as usize],
+        };
+        params.write(array.pointer);
+    }
+    unsafe fn AlphaFunc(&mut self, func: GLenum, reference: GLclampf) {
+        gles2::Enable(gles2::BLEND);
+        let _ = (func, reference);
+    }
+    unsafe fn AlphaFuncx(&mut self, func: GLenum, reference: GLclampx) {
+        self.AlphaFunc(func, fixed_to_float(reference));
+    }
+    unsafe fn Color4f(&mut self, red: GLfloat, green: GLfloat, blue: GLfloat, alpha: GLfloat) {
+        self.fixed_state.current_color = [red, green, blue, alpha];
+        self.fixed_state.fixed_pipeline_active = true;
+    }
+    unsafe fn Color4x(&mut self, red: GLfixed, green: GLfixed, blue: GLfixed, alpha: GLfixed) {
+        self.Color4f(fixed_to_float(red), fixed_to_float(green), fixed_to_float(blue), fixed_to_float(alpha));
+    }
+    unsafe fn Color4ub(&mut self, red: GLubyte, green: GLubyte, blue: GLubyte, alpha: GLubyte) {
+        self.Color4f(red as GLfloat / 255.0, green as GLfloat / 255.0, blue as GLfloat / 255.0, alpha as GLfloat / 255.0);
+    }
     unsafe fn ShadeModel(&mut self, _mode: GLenum) {}
-    unsafe fn LoadIdentity(&mut self) {}
-    unsafe fn LoadMatrixf(&mut self, _m: *const GLfloat) {}
-    unsafe fn LoadMatrixx(&mut self, _m: *const GLfixed) {}
-    unsafe fn MultMatrixf(&mut self, _m: *const GLfloat) {}
-    unsafe fn MultMatrixx(&mut self, _m: *const GLfixed) {}
-    unsafe fn PushMatrix(&mut self) {}
-    unsafe fn PopMatrix(&mut self) {}
-    unsafe fn MatrixMode(&mut self, _mode: GLenum) {}
-    unsafe fn Frustumf(
-        &mut self,
-        _left: GLfloat,
-        _right: GLfloat,
-        _bottom: GLfloat,
-        _top: GLfloat,
-        _near: GLfloat,
-        _far: GLfloat,
-    ) {
+    unsafe fn LoadIdentity(&mut self) {
+        *self.current_matrix_mut() = fixed_identity();
     }
-    unsafe fn Frustumx(
-        &mut self,
-        _left: GLfixed,
-        _right: GLfixed,
-        _bottom: GLfixed,
-        _top: GLfixed,
-        _near: GLfixed,
-        _far: GLfixed,
-    ) {
+    unsafe fn LoadMatrixf(&mut self, matrix: *const GLfloat) {
+        if !matrix.is_null() {
+            let mut value = [0.0; 16];
+            for (index, cell) in value.iter_mut().enumerate() { *cell = matrix.add(index).read_unaligned(); }
+            *self.current_matrix_mut() = value;
+        }
     }
-    unsafe fn Orthof(
-        &mut self,
-        _left: GLfloat,
-        _right: GLfloat,
-        _bottom: GLfloat,
-        _top: GLfloat,
-        _near: GLfloat,
-        _far: GLfloat,
-    ) {
+    unsafe fn LoadMatrixx(&mut self, matrix: *const GLfixed) {
+        if !matrix.is_null() {
+            let mut value = [0.0; 16];
+            for (index, cell) in value.iter_mut().enumerate() { *cell = fixed_to_float(matrix.add(index).read_unaligned()); }
+            *self.current_matrix_mut() = value;
+        }
     }
-    unsafe fn Orthox(
-        &mut self,
-        _left: GLfixed,
-        _right: GLfixed,
-        _bottom: GLfixed,
-        _top: GLfixed,
-        _near: GLfixed,
-        _far: GLfixed,
-    ) {
+    unsafe fn MultMatrixf(&mut self, matrix: *const GLfloat) {
+        if !matrix.is_null() {
+            let mut value = [0.0; 16];
+            for (index, cell) in value.iter_mut().enumerate() { *cell = matrix.add(index).read_unaligned(); }
+            let current = *self.current_matrix_mut();
+            *self.current_matrix_mut() = fixed_mul(&current, &value);
+        }
     }
-    unsafe fn Rotatef(&mut self, _a: GLfloat, _x: GLfloat, _y: GLfloat, _z: GLfloat) {}
-    unsafe fn Rotatex(&mut self, _a: GLfixed, _x: GLfixed, _y: GLfixed, _z: GLfixed) {}
-    unsafe fn Scalef(&mut self, _x: GLfloat, _y: GLfloat, _z: GLfloat) {}
-    unsafe fn Scalex(&mut self, _x: GLfixed, _y: GLfixed, _z: GLfixed) {}
-    unsafe fn Translatef(&mut self, _x: GLfloat, _y: GLfloat, _z: GLfloat) {}
-    unsafe fn Translatex(&mut self, _x: GLfixed, _y: GLfixed, _z: GLfixed) {}
-    unsafe fn TexEnvf(&mut self, _target: GLenum, _pname: GLenum, _param: GLfloat) {}
-    unsafe fn TexEnvx(&mut self, _target: GLenum, _pname: GLenum, _param: GLfixed) {}
-    unsafe fn TexEnvi(&mut self, _target: GLenum, _pname: GLenum, _param: GLint) {}
-    unsafe fn TexEnvfv(&mut self, _target: GLenum, _pname: GLenum, _params: *const GLfloat) {}
-    unsafe fn TexEnvxv(&mut self, _target: GLenum, _pname: GLenum, _params: *const GLfixed) {}
-    unsafe fn TexEnviv(&mut self, _target: GLenum, _pname: GLenum, _params: *const GLint) {}
-    unsafe fn VertexPointer(
-        &mut self,
-        _size: GLint,
-        _type_: GLenum,
-        _stride: GLsizei,
-        _pointer: *const GLvoid,
-    ) {
+    unsafe fn MultMatrixx(&mut self, matrix: *const GLfixed) {
+        if !matrix.is_null() {
+            let mut value = [0.0; 16];
+            for (index, cell) in value.iter_mut().enumerate() { *cell = fixed_to_float(matrix.add(index).read_unaligned()); }
+            let current = *self.current_matrix_mut();
+            *self.current_matrix_mut() = fixed_mul(&current, &value);
+        }
     }
-    unsafe fn ColorPointer(
-        &mut self,
-        _size: GLint,
-        _type_: GLenum,
-        _stride: GLsizei,
-        _pointer: *const GLvoid,
-    ) {
+    unsafe fn PushMatrix(&mut self) {
+        let matrix = *self.current_matrix_mut();
+        match self.fixed_state.matrix_mode {
+            gles11::PROJECTION => self.fixed_state.projection.push(matrix),
+            gles11::TEXTURE => self.fixed_state.texture[(self.fixed_state.active_texture - gles11::TEXTURE0) as usize].push(matrix),
+            _ => self.fixed_state.modelview.push(matrix),
+        }
     }
-    unsafe fn NormalPointer(&mut self, _type_: GLenum, _stride: GLsizei, _pointer: *const GLvoid) {}
-    unsafe fn TexCoordPointer(
-        &mut self,
-        _size: GLint,
-        _type_: GLenum,
-        _stride: GLsizei,
-        _pointer: *const GLvoid,
-    ) {
+    unsafe fn PopMatrix(&mut self) {
+        match self.fixed_state.matrix_mode {
+            gles11::PROJECTION => { if self.fixed_state.projection.len() > 1 { self.fixed_state.projection.pop(); } },
+            gles11::TEXTURE => { let stack = &mut self.fixed_state.texture[(self.fixed_state.active_texture - gles11::TEXTURE0) as usize]; if stack.len() > 1 { stack.pop(); } },
+            _ => { if self.fixed_state.modelview.len() > 1 { self.fixed_state.modelview.pop(); } },
+        }
+    }
+    unsafe fn MatrixMode(&mut self, mode: GLenum) {
+        if matches!(mode, gles11::MODELVIEW | gles11::PROJECTION | gles11::TEXTURE) {
+            self.fixed_state.matrix_mode = mode;
+        }
+    }
+    unsafe fn Frustumf(&mut self, left: GLfloat, right: GLfloat, bottom: GLfloat, top: GLfloat, near: GLfloat, far: GLfloat) {
+        let matrix = fixed_frustum(left, right, bottom, top, near, far);
+        let current = *self.current_matrix_mut();
+        *self.current_matrix_mut() = fixed_mul(&current, &matrix);
+    }
+    unsafe fn Frustumx(&mut self, left: GLfixed, right: GLfixed, bottom: GLfixed, top: GLfixed, near: GLfixed, far: GLfixed) {
+        self.Frustumf(fixed_to_float(left), fixed_to_float(right), fixed_to_float(bottom), fixed_to_float(top), fixed_to_float(near), fixed_to_float(far));
+    }
+    unsafe fn Orthof(&mut self, left: GLfloat, right: GLfloat, bottom: GLfloat, top: GLfloat, near: GLfloat, far: GLfloat) {
+        let matrix = fixed_ortho(left, right, bottom, top, near, far);
+        let current = *self.current_matrix_mut();
+        *self.current_matrix_mut() = fixed_mul(&current, &matrix);
+    }
+    unsafe fn Orthox(&mut self, left: GLfixed, right: GLfixed, bottom: GLfixed, top: GLfixed, near: GLfixed, far: GLfixed) {
+        self.Orthof(fixed_to_float(left), fixed_to_float(right), fixed_to_float(bottom), fixed_to_float(top), fixed_to_float(near), fixed_to_float(far));
+    }
+    unsafe fn Rotatef(&mut self, angle: GLfloat, x: GLfloat, y: GLfloat, z: GLfloat) {
+        let current = *self.current_matrix_mut();
+        *self.current_matrix_mut() = fixed_mul(&current, &fixed_rotate(angle, x, y, z));
+    }
+    unsafe fn Rotatex(&mut self, angle: GLfixed, x: GLfixed, y: GLfixed, z: GLfixed) {
+        self.Rotatef(fixed_to_float(angle), fixed_to_float(x), fixed_to_float(y), fixed_to_float(z));
+    }
+    unsafe fn Scalef(&mut self, x: GLfloat, y: GLfloat, z: GLfloat) {
+        let current = *self.current_matrix_mut();
+        *self.current_matrix_mut() = fixed_mul(&current, &fixed_scale(x, y, z));
+    }
+    unsafe fn Scalex(&mut self, x: GLfixed, y: GLfixed, z: GLfixed) {
+        self.Scalef(fixed_to_float(x), fixed_to_float(y), fixed_to_float(z));
+    }
+    unsafe fn Translatef(&mut self, x: GLfloat, y: GLfloat, z: GLfloat) {
+        let current = *self.current_matrix_mut();
+        *self.current_matrix_mut() = fixed_mul(&current, &fixed_translate(x, y, z));
+    }
+    unsafe fn Translatex(&mut self, x: GLfixed, y: GLfixed, z: GLfixed) {
+        self.Translatef(fixed_to_float(x), fixed_to_float(y), fixed_to_float(z));
+    }
+    unsafe fn TexEnvf(&mut self, _target: GLenum, pname: GLenum, param: GLfloat) {
+        self.TexEnvi(_target, pname, param as GLint);
+    }
+    unsafe fn TexEnvx(&mut self, target: GLenum, pname: GLenum, param: GLfixed) {
+        self.TexEnvi(target, pname, fixed_to_float(param) as GLint);
+    }
+    unsafe fn TexEnvi(&mut self, _target: GLenum, pname: GLenum, param: GLint) {
+        let unit = self.fixed_state.active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+        if unit < self.fixed_state.texture_env_mode.len() {
+            self.fixed_state.texture_env_mode[unit] = param as GLenum;
+            self.fixed_state.fixed_pipeline_active = true;
+        }
+    }
+    unsafe fn TexEnvfv(&mut self, target: GLenum, pname: GLenum, params: *const GLfloat) {
+        if !params.is_null() { self.TexEnvf(target, pname, params.read_unaligned()); }
+    }
+    unsafe fn TexEnvxv(&mut self, target: GLenum, pname: GLenum, params: *const GLfixed) {
+        if !params.is_null() { self.TexEnvx(target, pname, params.read_unaligned()); }
+    }
+    unsafe fn TexEnviv(&mut self, target: GLenum, pname: GLenum, params: *const GLint) {
+        if !params.is_null() { self.TexEnvi(target, pname, params.read_unaligned()); }
+    }
+    unsafe fn VertexPointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+        self.fixed_state.vertex = FixedArrayState { size, type_, stride, pointer, buffer_binding: self.fixed_state.array_buffer, enabled: self.fixed_state.vertex.enabled };
+        self.fixed_state.fixed_pipeline_active = true;
+    }
+    unsafe fn ColorPointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+        self.fixed_state.color = FixedArrayState { size, type_, stride, pointer, buffer_binding: self.fixed_state.array_buffer, enabled: self.fixed_state.color.enabled };
+        self.fixed_state.fixed_pipeline_active = true;
+    }
+    unsafe fn NormalPointer(&mut self, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+        self.fixed_state.normal = FixedArrayState { size: 3, type_, stride, pointer, buffer_binding: self.fixed_state.array_buffer, enabled: self.fixed_state.normal.enabled };
+        self.fixed_state.fixed_pipeline_active = true;
+    }
+    unsafe fn TexCoordPointer(&mut self, size: GLint, type_: GLenum, stride: GLsizei, pointer: *const GLvoid) {
+        let unit = self.fixed_state.client_active_texture.saturating_sub(gles11::TEXTURE0) as usize;
+        if unit < self.fixed_state.texcoord.len() {
+            self.fixed_state.texcoord[unit] = FixedArrayState { size, type_, stride, pointer, buffer_binding: self.fixed_state.array_buffer, enabled: self.fixed_state.texcoord[unit].enabled };
+            self.fixed_state.fixed_pipeline_active = true;
+        }
     }
 }

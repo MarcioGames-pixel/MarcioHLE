@@ -1,7 +1,7 @@
 #!/bin/sh
 set -e
 
-# Creates the .app bundle containing the basic set of files needed for touchHLE
+# Creates the .app bundle containing the basic set of files needed for RadekHLE
 # to run. Also adds an icon and metadata similar to the Android APK.
 
 if [[ $# == 3 ]]; then
@@ -11,10 +11,10 @@ if [[ $# == 3 ]]; then
     shift 3
 
     if [[ "x$BRANDING" == "x" ]]; then
-        APP_NAME=touchHLE
+        APP_NAME=RadekHLE
         ICON_NAME=icon
     else
-        APP_NAME="touchHLE $BRANDING"
+        APP_NAME="RadekHLE $BRANDING"
         ICON_NAME="icon_$(echo "$BRANDING" | tr 'A-Z' 'a-z')"
         VERSION="$VERSION $BRANDING"
     fi
@@ -28,7 +28,7 @@ if [[ $# == 3 ]]; then
 
     rm -rf "$APP_NAME.app"
     mkdir -p "$APP_NAME.app"/Contents/MacOS "$APP_NAME.app"/Contents/Resources
-    cp $PATH_TO_BINARY "$APP_NAME.app"/Contents/MacOS/touchHLE
+    cp $PATH_TO_BINARY "$APP_NAME.app"/Contents/MacOS/radekhle
     cp -r ../touchHLE_dylibs "$APP_NAME.app"/Contents/Resources/
     cp -r ../touchHLE_fonts "$APP_NAME.app"/Contents/Resources/
     cp -r ../touchHLE_default_options.txt "$APP_NAME.app"/Contents/Resources/
@@ -38,7 +38,7 @@ if [[ $# == 3 ]]; then
     plutil -insert CFBundleName -string "$APP_NAME" "$APP_NAME.app"/Contents/Info.plist
     plutil -insert CFBundleDisplayName -string "$APP_NAME" "$APP_NAME.app"/Contents/Info.plist
     plutil -insert CFBundleShortVersionString -string "$VERSION" "$APP_NAME.app"/Contents/Info.plist
-    plutil -insert CFBundleExecutable -string touchHLE "$APP_NAME.app"/Contents/Info.plist
+    plutil -insert CFBundleExecutable -string radekhle "$APP_NAME.app"/Contents/Info.plist
     plutil -insert CFBundleIconFile -string "$ICON_NAME" "$APP_NAME.app"/Contents/Info.plist
 else
     echo "Incorrect usage."
