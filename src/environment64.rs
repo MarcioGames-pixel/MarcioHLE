@@ -237,10 +237,10 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             .bindings
             .iter()
             .any(|binding| binding.symbol.contains("MTL"));
-    let graphics_backend = if uses_metal {
-        A64GraphicsBackend::MetalCompatibility
-    } else {
-        A64GraphicsBackend::OpenGLESCompatibility
+    let graphics_backend = match options.graphics_api {
+        crate::options::GraphicsApi::Metal => A64GraphicsBackend::MetalCompatibility,
+        crate::options::GraphicsApi::Default if uses_metal => A64GraphicsBackend::MetalCompatibility,
+        _ => A64GraphicsBackend::OpenGLESCompatibility,
     };
     let mut runtime_state = RuntimeState::new(ios_version, graphics_backend);
     runtime_state.current_module = Some(executable.name.clone());

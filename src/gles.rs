@@ -172,6 +172,22 @@ impl GLESImplementation {
     }
 }
 
+pub fn create_gles1_translator_ctx_no_parent_stack(
+    window: &mut crate::window::Window,
+) -> Box<dyn GLESContext> {
+    assert!(window.on_main_stack());
+    log!("Creating the OpenGL ES 1.x translator: guest GLES 1.1 -> host OpenGL 2.1 compatibility");
+    match GLES1OnGL2Context::new(window) {
+        Ok(ctx) => Box::new(ctx),
+        Err(err) => panic!("Couldn't create the OpenGL ES translator: {}", err),
+    }
+}
+pub fn create_gles1_translator_ctx(env: &mut Environment) -> Box<dyn GLESContext> {
+    env.on_parent_stack_in_coroutine(|window, _options| {
+        create_gles1_translator_ctx_no_parent_stack(window)
+    })
+}
+
 /// Try to create an OpenGL ES 1.1 context using the configured strategies,
 /// panicking on failure.
 pub fn create_gles1_ctx(env: &mut Environment) -> Box<dyn GLESContext> {

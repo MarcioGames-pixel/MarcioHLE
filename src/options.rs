@@ -34,6 +34,50 @@ pub enum Button {
 /// Highest iOS version currently exposed by the emulator compatibility layer.
 pub const LATEST_IOS_VERSION: (i32, i32, i32) = (12, 4, 1);
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum GraphicsApi {
+    Default,
+    Translator,
+    GLES10,
+    GLES11,
+    GLES20,
+    GLES30,
+    Metal,
+}
+
+impl Default for GraphicsApi {
+    fn default() -> Self {
+        Self::Default
+    }
+}
+
+impl GraphicsApi {
+    pub fn from_short_name(name: &str) -> Result<Self, ()> {
+        match name {
+            "default" | "auto" => Ok(Self::Default),
+            "translator" => Ok(Self::Translator),
+            "gles1.0" | "gles10" => Ok(Self::GLES10),
+            "gles1.1" | "gles11" => Ok(Self::GLES11),
+            "gles2.0" | "gles20" => Ok(Self::GLES20),
+            "gles3.0" | "gles30" => Ok(Self::GLES30),
+            "metal" => Ok(Self::Metal),
+            _ => Err(()),
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Default => "Default (game)",
+            Self::Translator => "Translator (GLES 1.x)",
+            Self::GLES10 => "OpenGL ES 1.0",
+            Self::GLES11 => "OpenGL ES 1.1",
+            Self::GLES20 => "OpenGL ES 2.0",
+            Self::GLES30 => "OpenGL ES 3.0",
+            Self::Metal => "Metal",
+        }
+    }
+}
+
 /// Struct containing all user-configurable options.
 #[derive(Clone)]
 pub struct Options {
@@ -63,6 +107,7 @@ pub struct Options {
     /// Allow selected early OpenGL ES 2.0 apps to use the GLES2 subset exposed
     /// through touchHLE's desktop OpenGL 2.1 compatibility backend.
     pub gles2_compat: bool,
+    pub graphics_api: GraphicsApi,
     pub angle_driver: bool,
     pub log_file: bool,
     pub fast_memory: bool,
@@ -144,6 +189,7 @@ impl Default for Options {
             stabilize_virtual_cursor: None,
             gles1_implementation: None,
             gles2_compat: false,
+            graphics_api: GraphicsApi::Default,
             angle_driver: false,
             log_file: true,
             fast_memory: true,
@@ -325,6 +371,9 @@ impl Options {
             );
         } else if arg == "--gles2-compat" {
             self.gles2_compat = true;
+        } else if let Some(value) = arg.strip_prefix("--graphics-api=") {
+            self.graphics_api = GraphicsApi::from_short_name(value)
+                .map_err(|_| "Unrecognized --graphics-api= value".to_string())?;
         } else if arg == "--angle-driver" {
             self.angle_driver = true;
         } else if arg == "--disable-angle-driver" {

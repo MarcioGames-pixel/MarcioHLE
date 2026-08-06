@@ -21,7 +21,7 @@ use crate::gles::{
 };
 use crate::mem::MutPtr;
 use crate::objc::{id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject};
-use crate::options::Options;
+use crate::options::{GraphicsApi, Options};
 use crate::Environment;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -79,17 +79,23 @@ fn effective_eagl_api(
     requested: EAGLRenderingAPI,
     prefer_gles2_context: bool,
     angle_driver: bool,
+    graphics_api: GraphicsApi,
 ) -> EAGLRenderingAPI {
-    if (prefer_gles2_context || angle_driver) && requested == kEAGLRenderingAPIOpenGLES1 {
-        log!(
-            "EAGL: upgrading initWithAPI:{} to OpenGL ES 2.0 (prefer_gles2_context={}, angle_driver={})",
-            requested,
-            prefer_gles2_context,
-            angle_driver
-        );
-        return kEAGLRenderingAPIOpenGLES2;
+    match graphics_api {
+        GraphicsApi::GLES10 | GraphicsApi::GLES11 | GraphicsApi::Translator => {
+            kEAGLRenderingAPIOpenGLES1
+        }
+        GraphicsApi::GLES20 => kEAGLRenderingAPIOpenGLES2,
+        GraphicsApi::GLES30 => kEAGLRenderingAPIOpenGLES3,
+        GraphicsApi::Metal | GraphicsApi::Default => {
+            if (prefer_gles2_context || angle_driver) && requested == kEAGLRenderingAPIOpenGLES1 {
+                log!("EAGL: upgrading initWithAPI:{} to OpenGL ES 2.0 (prefer_gles2_context={}, angle_driver={})", requested, prefer_gles2_context, angle_driver);
+                kEAGLRenderingAPIOpenGLES2
+            } else {
+                requested
+            }
+        }
     }
-    requested
 }
 
 #[derive(Default)]
@@ -181,6 +187,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         api,
         env.options.prefer_gles2_context,
         env.options.angle_driver,
+        env.options.graphics_api,
     );
 
     let mut gles_ins = match effective_api {
@@ -220,6 +227,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         api,
         env.options.prefer_gles2_context,
         env.options.angle_driver,
+        env.options.graphics_api,
     );
 
     let mut gles_ins = match effective_api {

@@ -212,6 +212,8 @@ struct AppPickerDelegateHostObject {
     apps_refresh_requested: bool,
     ios_version_toggle: bool,
     ios_version: Option<Option<(i32, i32, i32)>>,
+    graphics_api_toggle: bool,
+    graphics_api: Option<crate::options::GraphicsApi>,
 }
 impl HostObject for AppPickerDelegateHostObject {}
 
@@ -352,6 +354,24 @@ const CLASSES: ClassExports = objc_classes! {
 - (())iosVersion:(id)sender {
     let tag: NSInteger = msg![env; sender tag];
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).ios_version = Some(ios_version_for_tag(tag as i32));
+}
+
+- (())graphicsApiToggle {
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).graphics_api_toggle = true;
+}
+- (())graphicsApi:(id)sender {
+    let tag: NSInteger = msg![env; sender tag];
+    let api = match tag as i32 {
+        0 => crate::options::GraphicsApi::Default,
+        1 => crate::options::GraphicsApi::Translator,
+        2 => crate::options::GraphicsApi::GLES10,
+        3 => crate::options::GraphicsApi::GLES11,
+        4 => crate::options::GraphicsApi::GLES20,
+        5 => crate::options::GraphicsApi::GLES30,
+        6 => crate::options::GraphicsApi::Metal,
+        _ => crate::options::GraphicsApi::Default,
+    };
+    env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).graphics_api = Some(api);
 }
 
 - (())openFileManager {
@@ -682,6 +702,7 @@ fn app_picker_inner(
     let mut quick_options_device_model_open = false;
     let mut quick_options_device_model_scroll: isize = 0;
     let mut quick_options_ios_version: Option<(i32, i32, i32)> = None;
+    let mut quick_options_graphics_api = crate::options::GraphicsApi::Default;
 
     fn update_quick_option_buttons(env: &mut Environment, buttons: &[id], selected_idx: usize) {
         for (idx, &button) in buttons.iter().enumerate() {
@@ -745,6 +766,12 @@ fn app_picker_inner(
         quick_options_stuff.ios_version_menu,
         &quick_options_stuff.ios_version_items,
         quick_options_ios_version,
+    );
+    update_graphics_api_dropdown(
+        env,
+        quick_options_stuff.graphics_api_btn,
+        &quick_options_stuff.graphics_api_items,
+        quick_options_graphics_api,
     );
     update_scale_hack_buttons(
         env,
@@ -868,6 +895,17 @@ fn app_picker_inner(
         } else if let Some(version) = std::mem::take(&mut host_obj.ios_version) {
             quick_options_ios_version = version;
             update_ios_version_dropdown(env, quick_options_stuff.ios_version_btn, quick_options_stuff.ios_version_menu, &quick_options_stuff.ios_version_items, quick_options_ios_version);
+        } else if std::mem::take(&mut host_obj.graphics_api_toggle) {
+            let hidden: bool = msg![env; (quick_options_stuff.graphics_api_menu) isHidden];
+            () = msg![env; (quick_options_stuff.graphics_api_menu) setHidden:(!hidden)];
+            if hidden {
+                () = msg![env; (quick_options_stuff.main_view) bringSubviewToFront:(quick_options_stuff.graphics_api_menu)];
+                () = msg![env; (quick_options_stuff.main_view) bringSubviewToFront:(quick_options_stuff.graphics_api_btn)];
+            }
+        } else if let Some(api) = std::mem::take(&mut host_obj.graphics_api) {
+            quick_options_graphics_api = api;
+            update_graphics_api_dropdown(env, quick_options_stuff.graphics_api_btn, &quick_options_stuff.graphics_api_items, api);
+            () = msg![env; (quick_options_stuff.graphics_api_menu) setHidden:true];
         } else if std::mem::take(&mut host_obj.scale_hack_default) {
             quick_options_scale_hack = None;
             update_scale_hack_buttons(
@@ -1045,6 +1083,18 @@ fn app_picker_inner(
         option_args.push("--print-fps".to_string());
         std::env::set_var("TOUCHHLE_ONSCREEN_FPS", "1");
         crate::gles::present::set_onscreen_fps_enabled(true);
+    }
+    if quick_options_graphics_api != crate::options::GraphicsApi::Default {
+        let value = match quick_options_graphics_api {
+            crate::options::GraphicsApi::Translator => "translator",
+            crate::options::GraphicsApi::GLES10 => "gles1.0",
+            crate::options::GraphicsApi::GLES11 => "gles1.1",
+            crate::options::GraphicsApi::GLES20 => "gles2.0",
+            crate::options::GraphicsApi::GLES30 => "gles3.0",
+            crate::options::GraphicsApi::Metal => "metal",
+            crate::options::GraphicsApi::Default => unreachable!(),
+        };
+        option_args.push(format!("--graphics-api={value}"));
     }
     option_args.push(if quick_options_angle_driver {
         "--angle-driver"
@@ -1623,6 +1673,9 @@ struct QuickOptionsStuff {
     ios_version_btn: id,
     ios_version_menu: id,
     ios_version_items: Vec<id>,
+    graphics_api_btn: id,
+    graphics_api_menu: id,
+    graphics_api_items: Vec<id>,
     scale_hack_buttons: [id; 5],
     orientation_buttons: [id; 4],
     /// The button that toggles the "Device model" dropdown open/closed. Its
@@ -1763,11 +1816,14 @@ fn setup_quick_options(
         DeviceDropdown,
         /// Compact dropdown for the emulated iOS version.
         IosVersionDropdown,
+        GraphicsApiDropdown,
         Switch(&'static str, bool),
     }
     let rows = [
         RowKind::Label("iOS version"),
         RowKind::IosVersionDropdown,
+        RowKind::Label("Graphics API"),
+        RowKind::GraphicsApiDropdown,
         RowKind::Label("Game folder"),
         RowKind::Buttons(&[
             ("Open folder", "openFileManager"),
@@ -1820,6 +1876,9 @@ fn setup_quick_options(
     let mut ios_version_btn: id = nil;
     let mut ios_version_menu: id = nil;
     let mut ios_version_items: Vec<id> = Vec::new();
+    let mut graphics_api_btn: id = nil;
+    let mut graphics_api_menu: id = nil;
+    let mut graphics_api_items: Vec<id> = Vec::new();
     let mut device_model_btn: id = nil;
     let mut device_model_menu: id = nil;
     let mut device_model_items: Vec<id> = Vec::new();
@@ -1887,6 +1946,12 @@ fn setup_quick_options(
                 device_model_items = dropdown.2;
                 device_model_thumb = dropdown.3;
             }
+            RowKind::GraphicsApiDropdown => {
+                let dropdown = make_graphics_api_dropdown(env, delegate, main_view, main_frame.size, row_center);
+                graphics_api_btn = dropdown.0;
+                graphics_api_menu = dropdown.1;
+                graphics_api_items = dropdown.2;
+            }
             RowKind::Switch(selector, default_state) => {
                 let switch_frame = CGRect {
                     origin: CGPoint {
@@ -1913,6 +1978,9 @@ fn setup_quick_options(
         ios_version_btn,
         ios_version_menu,
         ios_version_items,
+        graphics_api_btn,
+        graphics_api_menu,
+        graphics_api_items,
         scale_hack_buttons: button_rows[1][..].try_into().unwrap(),
         orientation_buttons: button_rows[2][..].try_into().unwrap(),
         device_model_btn,
@@ -1985,15 +2053,71 @@ fn update_device_model_menu(
     () = msg![env; thumb setFrame:thumb_frame];
 }
 
-/// Build the "Device model" dropdown: a toggle button whose title shows the
-/// currently-selected model and an up/down arrow, plus a (initially hidden)
-/// menu placed *above* the button so it never runs off the bottom of the
-/// screen. The menu contains a vertically-scrollable list of every choice from
-/// [device_model_entries], a scrollbar track + thumb, and transparent up/down
-/// scroll arrows. Each list item is wired to the delegate's `deviceModel:`
-/// selector and tagged with its choice; the arrows fire `deviceModelScrollUp` /
-/// `deviceModelScrollDown`. Returns `(toggle button, menu view, item buttons,
-/// scrollbar thumb)`.
+/// Graphics API choices shown in the settings dropdown.
+const GRAPHICS_API_ENTRIES: &[(&str, crate::options::GraphicsApi)] = &[
+    ("Default (game)", crate::options::GraphicsApi::Default),
+    ("Translator (GLES 1.x)", crate::options::GraphicsApi::Translator),
+    ("OpenGL ES 1.0", crate::options::GraphicsApi::GLES10),
+    ("OpenGL ES 1.1", crate::options::GraphicsApi::GLES11),
+    ("OpenGL ES 2.0", crate::options::GraphicsApi::GLES20),
+    ("OpenGL ES 3.0", crate::options::GraphicsApi::GLES30),
+    ("Metal", crate::options::GraphicsApi::Metal),
+];
+
+fn update_graphics_api_dropdown(env: &mut Environment, button: id, items: &[id], value: crate::options::GraphicsApi) {
+    for (index, &item) in items.iter().enumerate() {
+        let color: id = if GRAPHICS_API_ENTRIES[index].1 == value {
+            msg_class![env; UIColor magentaColor]
+        } else {
+            msg_class![env; UIColor darkGrayColor]
+        };
+        () = msg![env; item setBackgroundColor:color];
+    }
+    let title = ns_string::get_static_str(env, value.label());
+    () = msg![env; button setTitle:title forState:UIControlStateNormal];
+}
+
+fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: id, super_view_size: CGSize, row_center: CGFloat) -> (id, id, Vec<id>) {
+    let ui_scale = picker_ui_scale(super_view_size);
+    let width = (super_view_size.width * 0.52).clamp(220.0, 620.0);
+    let height = 22.0 * ui_scale;
+    let frame = CGRect { origin: CGPoint { x: super_view_size.width / 2.0 - width / 2.0, y: row_center - height / 2.0 }, size: CGSize { width, height } };
+    let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
+    let title = ns_string::get_static_str(env, "Default (game)");
+    () = msg![env; button setTitle:title forState:UIControlStateNormal];
+    release(env, title);
+    let black: id = msg_class![env; UIColor blackColor];
+    let gray: id = msg_class![env; UIColor darkGrayColor];
+    () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
+    () = msg![env; button setBackgroundColor:gray];
+    () = msg![env; button setFrame:frame];
+    let toggle = env.objc.lookup_selector("graphicsApiToggle").unwrap();
+    () = msg![env; button addTarget:delegate action:toggle forControlEvents:UIControlEventTouchUpInside];
+    () = msg![env; super_view addSubview:button];
+    let menu: id = msg_class![env; UIView alloc];
+    let menu: id = msg![env; menu initWithFrame:(CGRect { origin: CGPoint { x: frame.origin.x, y: (frame.origin.y - height * GRAPHICS_API_ENTRIES.len() as CGFloat).max(0.0) }, size: CGSize { width, height: height * GRAPHICS_API_ENTRIES.len() as CGFloat } })];
+    () = msg![env; menu setBackgroundColor:gray];
+    () = msg![env; menu setClipsToBounds:true];
+    () = msg![env; menu setHidden:true];
+    () = msg![env; super_view addSubview:menu];
+    let selector = env.objc.lookup_selector("graphicsApi:").unwrap();
+    let mut items = Vec::new();
+    for (index, (label, _)) in GRAPHICS_API_ENTRIES.iter().enumerate() {
+        let item: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
+        let text = ns_string::get_static_str(env, label);
+        () = msg![env; item setTitle:text forState:UIControlStateNormal];
+        release(env, text);
+        () = msg![env; item setTitleColor:black forState:UIControlStateNormal];
+        () = msg![env; item setBackgroundColor:gray];
+        () = msg![env; item setFrame:(CGRect { origin: CGPoint { x: 0.0, y: index as CGFloat * height }, size: CGSize { width, height } })];
+        () = msg![env; item setTag:(index as NSInteger)];
+        () = msg![env; item addTarget:delegate action:selector forControlEvents:UIControlEventTouchUpInside];
+        () = msg![env; menu addSubview:item];
+        items.push(item);
+    }
+    (button, menu, items)
+}
+
 fn make_ios_version_dropdown(
     env: &mut Environment,
     delegate: id,

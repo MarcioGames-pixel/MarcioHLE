@@ -14,7 +14,8 @@
 
 use crate::gles::present::present_frame;
 use crate::gles::{
-    create_gles1_ctx_no_parent_stack, create_gles2_ctx_no_parent_stack, GLESContext, GLES,
+    create_gles1_ctx_no_parent_stack, create_gles1_translator_ctx_no_parent_stack,
+    create_gles2_ctx_no_parent_stack, GLESContext, GLES,
 };
 use crate::image::Image;
 use crate::matrix::Matrix;
@@ -980,10 +981,23 @@ impl Window {
         // (see src/frameworks/core_animation/composition.rs). OpenGL ES is used
         // because SDL2 won't let us use more than one graphics API in the same
         // window, and we also need OpenGL ES for the app's own rendering.
-        let mut gl_ins = if options.prefer_gles2_context || options.angle_driver {
-            create_gles2_ctx_no_parent_stack(&mut window)
-        } else {
-            create_gles1_ctx_no_parent_stack(&mut window, options)
+        let mut gl_ins = match options.graphics_api {
+            crate::options::GraphicsApi::Translator => {
+                create_gles1_translator_ctx_no_parent_stack(&mut window)
+            }
+            crate::options::GraphicsApi::GLES20 | crate::options::GraphicsApi::GLES30 => {
+                create_gles2_ctx_no_parent_stack(&mut window)
+            }
+            crate::options::GraphicsApi::GLES10 | crate::options::GraphicsApi::GLES11 => {
+                create_gles1_ctx_no_parent_stack(&mut window, options)
+            }
+            crate::options::GraphicsApi::Metal | crate::options::GraphicsApi::Default => {
+                if options.prefer_gles2_context || options.angle_driver {
+                    create_gles2_ctx_no_parent_stack(&mut window)
+                } else {
+                    create_gles1_ctx_no_parent_stack(&mut window, options)
+                }
+            }
         };
         {
             let gl_ctx = gl_ins.make_current(&mut window);
