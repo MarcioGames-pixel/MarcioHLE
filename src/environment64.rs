@@ -278,6 +278,8 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     context.regs[3] = apple_ptr;
     context.regs[30] = return_stub;
     let mut cpu = A64Cpu::new();
+    cpu.set_trace(true);
+    echo!("ARM64 execution transition: context loaded; entering Dynarmic with pc={:#x} sp={:#x} lr={:#x}", context.pc, context.sp, context.regs[30]);
     cpu.load_context(&context);
     let mut ticks = Some(100_000_u64);
     let mut host_dispatches = 0_u64;
@@ -296,9 +298,26 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         cpu.save_context(&mut context);
         if trace_this_instruction {
             trace_count += 1;
+            let instruction_executed = result == -1 || result >= 0;
+            echo!(
+                "ARM64 step return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} instruction={:#010x} decoded={}",
+                trace_count,
+                result,
+                instruction_executed,
+                instruction_pc,
+                context.pc,
+                context.sp,
+                context.regs[30],
+                instruction,
+                decode_instruction(instruction, instruction_pc),
+            );
             if trace_count == 1 {
-                echo!("ARM64 first executed instruction: pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", instruction_pc, context.sp, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
-                echo!("ARM64 first basic block: pc={:#x}", instruction_pc);
+                if instruction_executed {
+                    echo!("ARM64 first executed instruction: pc={:#x} instruction={:#010x} decoded={}", instruction_pc, instruction, decode_instruction(instruction, instruction_pc));
+                    echo!("ARM64 first basic block: pc={:#x}", instruction_pc);
+                } else {
+                    echo!("ARM64 first instruction did not execute: pc={:#x} result={} ({})", instruction_pc, result, if result == -5 { "unexpected halt" } else { "execution fault" });
+                }
             }
             if previous_pcs.len() == 16 { previous_pcs.pop_front(); }
             previous_pcs.push_back(instruction_pc);
@@ -307,7 +326,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 previous_branches.push_back((instruction_pc, target));
                 echo!("ARM64 branch #{}: {:#x} -> {:#x} ({})", trace_count, instruction_pc, target, decode_instruction(instruction, instruction_pc));
             }
-            echo!("ARM64 instruction #{}: pc={:#x} next_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", trace_count, instruction_pc, context.pc, context.sp, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
+            echo!("ARM64 instruction #{}: pc={:#x} next_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", trace_count, instruction_pc, context.pc, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
         }
         match result {
             -1 => {

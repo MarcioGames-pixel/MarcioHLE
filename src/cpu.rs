@@ -14,11 +14,27 @@ use crate::abi::GuestFunction;
 use crate::mem::{ConstPtr, GuestUSize, Mem, MutPtr, Ptr, SafeRead, SafeWrite};
 use crate::mem64::Mem64;
 
+use std::ffi::CStr;
+
 // Import functions from C++
 use touchHLE_dynarmic_wrapper::*;
 
 type VAddr = u32;
 pub type CpuContext = touchHLE_DynarmicContext;
+
+#[no_mangle]
+extern "C" fn touchHLE_cpu_a64_log(message: *const std::ffi::c_char) {
+    if message.is_null() {
+        return;
+    }
+    let message = unsafe { CStr::from_ptr(message) };
+    let Ok(message) = message.to_str() else {
+        return;
+    };
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        echo!("ARM64 dynarmic: {}", message);
+    }));
+}
 
 fn touchHLE_cpu_read_impl<T: SafeRead + Default>(
     mem: *mut touchHLE_Mem,
@@ -405,5 +421,9 @@ impl A64Cpu {
 
     pub fn clear_halt(&mut self, reason: u32) {
         unsafe { touchHLE_DynarmicA64Wrapper_clear_halt(self.dynarmic_wrapper, reason) }
+    }
+
+    pub fn set_trace(&mut self, enabled: bool) {
+        unsafe { touchHLE_DynarmicA64Wrapper_set_trace(self.dynarmic_wrapper, enabled) }
     }
 }

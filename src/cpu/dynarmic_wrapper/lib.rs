@@ -128,5 +128,9 @@ extern "C" {
         cpu: *mut touchHLE_DynarmicWrapper,
         reason: u32,
     );
+    pub fn touchHLE_DynarmicA64Wrapper_set_trace(
+        cpu: *mut touchHLE_DynarmicWrapper,
+        enabled: bool,
+    );
 
 }
