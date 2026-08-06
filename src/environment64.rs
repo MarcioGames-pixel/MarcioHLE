@@ -326,7 +326,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 previous_branches.push_back((instruction_pc, target));
                 echo!("ARM64 branch #{}: {:#x} -> {:#x} ({})", trace_count, instruction_pc, target, decode_instruction(instruction, instruction_pc));
             }
-            echo!("ARM64 instruction #{}: pc={:#x} next_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", trace_count, instruction_pc, context.pc, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
+            echo!("ARM64 instruction #{}: pc={:#x} next_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}", trace_count, instruction_pc, context.pc, context.sp, context.regs[30], context.regs[29], instruction, decode_instruction(instruction, instruction_pc));
         }
         match result {
             -1 => {
