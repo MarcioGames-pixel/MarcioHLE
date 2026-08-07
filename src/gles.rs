@@ -65,6 +65,7 @@
 
 pub mod gles1_native;
 pub mod gles1_on_gl2;
+pub mod gles1_on_gles2;
 pub mod gles2_glsl;
 pub mod gles2_native;
 pub mod gles2_on_gl3;
@@ -82,6 +83,7 @@ pub use touchHLE_gl_bindings::gles30 as gles30_raw;
 use crate::environment::Environment;
 use gles1_native::GLES1NativeContext;
 use gles1_on_gl2::GLES1OnGL2Context;
+use gles1_on_gles2::GLES1OnGLES2Context;
 use gles2_native::GLES2NativeContext;
 use gles2_on_gl3::GLES2OnGL3Context;
 use gles3_native::GLES3NativeContext;
@@ -137,6 +139,8 @@ pub enum GLESImplementation {
     GLES1Native,
     /// [gles1_on_gl2::GLES1OnGL2].
     GLES1OnGL2,
+    /// [gles1_on_gles2::GLES1OnGLES2].
+    GLES1OnGLES2,
 }
 impl GLESImplementation {
     /// List of OpenGL ES 1.1 implementations in order of preference.
@@ -146,6 +150,7 @@ impl GLESImplementation {
     pub fn from_short_name(name: &str) -> Result<Self, ()> {
         match name {
             "gles1_on_gl2" => Ok(Self::GLES1OnGL2),
+            "gles1_on_gles2" => Ok(Self::GLES1OnGLES2),
             "gles1_native" => Ok(Self::GLES1Native),
             _ => Err(()),
         }
@@ -155,6 +160,7 @@ impl GLESImplementation {
         match self {
             Self::GLES1Native => GLES1NativeContext::description(),
             Self::GLES1OnGL2 => GLES1OnGL2Context::description(),
+            Self::GLES1OnGLES2 => GLES1OnGLES2Context::description(),
         }
     }
     /// See [GLESContext::new].
@@ -168,6 +174,7 @@ impl GLESImplementation {
         match self {
             Self::GLES1Native => GLES1NativeContext::new(window).map(boxer),
             Self::GLES1OnGL2 => GLES1OnGL2Context::new(window).map(boxer),
+            Self::GLES1OnGLES2 => GLES1OnGLES2Context::new(window).map(boxer),
         }
     }
 }
@@ -176,8 +183,11 @@ pub fn create_gles1_translator_ctx_no_parent_stack(
     window: &mut crate::window::Window,
 ) -> Box<dyn GLESContext> {
     assert!(window.on_main_stack());
-    log!("Creating the OpenGL ES 1.x translator: guest GLES 1.1 -> host OpenGL ES 2.0 shader pipeline");
-    create_gles2_ctx_no_parent_stack(window)
+    log!("Creating the OpenGL ES 1.1 to native OpenGL ES 2.0 translator");
+    Box::new(
+        GLES1OnGLES2Context::new(window)
+            .expect("Couldn't create OpenGL ES 1.1-on-GLES2 translator context!"),
+    )
 }
 pub fn create_gles1_translator_ctx(env: &mut Environment) -> Box<dyn GLESContext> {
     env.on_parent_stack_in_coroutine(|window, _options| {

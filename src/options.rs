@@ -68,7 +68,7 @@ impl GraphicsApi {
     pub fn label(self) -> &'static str {
         match self {
             Self::Default => "Default (game)",
-            Self::Translator => "Translator (GLES 1.x)",
+            Self::Translator => "OpenGL ES 1.1 → OpenGL ES 2.0 translator",
             Self::GLES10 => "OpenGL ES 1.0",
             Self::GLES11 => "OpenGL ES 1.1",
             Self::GLES20 => "OpenGL ES 2.0",

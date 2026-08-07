@@ -1537,7 +1537,8 @@ fn make_button_row(
         () = msg![env; label setTextAlignment:UITextAlignmentCenter];
         let black: id = msg_class![env; UIColor blackColor];
         () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
-        () = msg![env; button setBackgroundColor:(msg_class![env; UIColor whiteColor])];
+        let white: id = msg_class![env; UIColor whiteColor];
+        () = msg![env; button setBackgroundColor:white];
         let layer: id = msg![env; button layer];
         () = msg![env; layer setCornerRadius:(7.0 * ui_scale)];
         () = msg![env; button layoutSubviews];
@@ -2198,7 +2199,10 @@ fn update_device_model_menu(
 /// Graphics API choices shown in the settings dropdown.
 const GRAPHICS_API_ENTRIES: &[(&str, crate::options::GraphicsApi)] = &[
     ("Default (game)", crate::options::GraphicsApi::Default),
-    ("Translator (GLES 1.x)", crate::options::GraphicsApi::Translator),
+    (
+        "OpenGL ES 1.1 → OpenGL ES 2.0 translator",
+        crate::options::GraphicsApi::Translator,
+    ),
     ("OpenGL ES 1.0", crate::options::GraphicsApi::GLES10),
     ("OpenGL ES 1.1", crate::options::GraphicsApi::GLES11),
     ("OpenGL ES 2.0", crate::options::GraphicsApi::GLES20),
