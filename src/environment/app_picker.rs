@@ -1421,27 +1421,27 @@ fn make_app_launcher_grid(
 ) {
     let ui_scale = picker_ui_scale(super_view_size);
     let short_side = super_view_size.width.min(super_view_size.height);
-    let icon_size = (58.0 * ui_scale).min(short_side * 0.22).max(42.0);
-    let card_width = (super_view_size.width * 0.36).max(icon_size + 12.0 * ui_scale);
+    let icon_size = (64.0 * ui_scale).min(short_side * 0.24).max(42.0);
+    let card_width = (super_view_size.width * 0.40).max(icon_size + 12.0 * ui_scale);
     let items = [
-        ("Files", "openFileManager", '📁'),
-        ("Settings", "quickOptionsShow", '⚙'),
-        ("Info", "copyrightInfoShow", 'ⓘ'),
-        ("TouchHLE.org", "visitWebsite", '◆'),
+        ("Files", "openFileManager", "/res/picker_files_icon.jpg"),
+        ("Settings", "quickOptionsShow", "/res/picker_settings_icon.jpg"),
+        ("Info", "copyrightInfoShow", "/res/picker_touchhle_icon.png"),
+        ("TouchHLE.org", "visitWebsite", "/res/picker_touchhle_icon.png"),
     ];
-    for (index, (title, selector_name, glyph)) in items.iter().enumerate() {
+    for (index, (title, selector_name, icon_path)) in items.iter().enumerate() {
         let row = index / 2;
         let column = index % 2;
         let center = if row == 0 { first_row_center } else { second_row_center };
         let card_center_x = if column == 0 {
-            super_view_size.width * 0.32
+            super_view_size.width * 0.28
         } else {
-            super_view_size.width * 0.68
+            super_view_size.width * 0.72
         };
         let icon_frame = CGRect {
             origin: CGPoint {
                 x: (card_center_x - icon_size / 2.0).round(),
-                y: (center - icon_size / 2.0 - 5.0 * ui_scale).round(),
+                y: (center - icon_size / 2.0 - 7.0 * ui_scale).round(),
             },
             size: CGSize {
                 width: icon_size,
@@ -1450,22 +1450,21 @@ fn make_app_launcher_grid(
         };
         let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
         () = msg![env; button setFrame:icon_frame];
-        let image = make_icon_from_glyph(
-            env,
-            *glyph,
-            (30.0 * ui_scale).max(24.0),
-            0.0,
-            (0.18, 0.18, 0.22, 0.94),
-        );
+        let resource = match *icon_path {
+            "/res/picker_files_icon.jpg" => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_files_icon.jpg")),
+            "/res/picker_settings_icon.jpg" => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_settings_icon.jpg")),
+            "/res/picker_touchhle_icon.png" => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_touchhle_icon.png")),
+            _ => unreachable!(),
+        };
+        let image = Image::from_bytes(resource).expect("picker icon resource must be valid");
+        let image = cg_image::from_image(env, image);
+        let image: id = msg_class![env; UIImage imageWithCGImage:image];
         () = msg![env; button setImage:image forState:UIControlStateNormal];
         let image_view: id = msg![env; button imageView];
-        let inset = (5.0 * ui_scale).min(icon_size * 0.16);
+        () = msg![env; image_view setContentMode:2];
         () = msg![env; image_view setFrame:(CGRect {
-            origin: CGPoint { x: inset, y: inset },
-            size: CGSize {
-                width: (icon_size - inset * 2.0).max(1.0),
-                height: (icon_size - inset * 2.0).max(1.0),
-            },
+            origin: CGPoint { x: 0.0, y: 0.0 },
+            size: icon_frame.size,
         })];
         let selector = env.objc.lookup_selector(selector_name).unwrap();
         () = msg![env; button addTarget:delegate
@@ -1476,11 +1475,11 @@ fn make_app_launcher_grid(
         let label_frame = CGRect {
             origin: CGPoint {
                 x: (card_center_x - card_width / 2.0).round(),
-                y: (icon_frame.origin.y + icon_size + 3.0 * ui_scale).round(),
+                y: (icon_frame.origin.y + icon_size + 5.0 * ui_scale).round(),
             },
             size: CGSize {
                 width: card_width,
-                height: (16.0 * ui_scale).max(14.0),
+                height: (18.0 * ui_scale).max(14.0),
             },
         };
         let label: id = msg_class![env; UILabel alloc];
@@ -1488,10 +1487,10 @@ fn make_app_launcher_grid(
         let text = ns_string::get_static_str(env, title);
         () = msg![env; label setText:text];
         () = msg![env; label setTextAlignment:UITextAlignmentCenter];
-        let font = picker_font(env, (10.5 * ui_scale).max(9.0));
+        let font = picker_font(env, (11.0 * ui_scale).max(9.0));
         () = msg![env; label setFont:font];
         () = msg![env; label setAdjustsFontSizeToFitWidth:true];
-        () = msg![env; label setMinimumFontSize:7.0];
+        () = msg![env; label setMinimumFontSize:8.0];
         let text_color: id = msg_class![env; UIColor whiteColor];
         () = msg![env; label setTextColor:text_color];
         () = msg![env; super_view addSubview:label];
@@ -1512,7 +1511,7 @@ fn make_button_row(
     let button_size = CGSize {
         width: (super_view_size.width - margin * (buttons.len() as CGFloat + 1.0))
             / buttons.len() as CGFloat,
-        height: 22.0 * ui_scale,
+        height: 30.0 * ui_scale,
     };
     let mut button_frame = CGRect {
         origin: CGPoint {
@@ -1524,12 +1523,10 @@ fn make_button_row(
 
     let mut ui_buttons = Vec::new();
     for (title_text, selector) in buttons {
-        let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeRoundedRect];
+        let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
         let text = ns_string::get_static_str(env, title_text);
         () = msg![env; button setTitle:text forState:UIControlStateNormal];
         () = msg![env; button setFrame:button_frame];
-        // FIXME: manually calling layoutSubviews shouldn't be needed?
-        () = msg![env; button layoutSubviews];
 
         let label: id = msg![env; button titleLabel];
         let scaled_font_size = font_size.unwrap_or(12.0) * ui_scale;
@@ -1537,6 +1534,12 @@ fn make_button_row(
         () = msg![env; label setFont:font];
         () = msg![env; label setAdjustsFontSizeToFitWidth:true];
         () = msg![env; label setMinimumFontSize:8.0];
+        () = msg![env; label setTextAlignment:UITextAlignmentCenter];
+        () = msg![env; button setTitleColor:(msg_class![env; UIColor blackColor]) forState:UIControlStateNormal];
+        () = msg![env; button setBackgroundColor:(msg_class![env; UIColor whiteColor])];
+        let layer: id = msg![env; button layer];
+        () = msg![env; layer setCornerRadius:(7.0 * ui_scale)];
+        () = msg![env; button layoutSubviews];
 
         let selector = env.objc.lookup_selector(selector).unwrap();
         () = msg![env; button addTarget:delegate
@@ -2017,7 +2020,7 @@ fn setup_quick_options(
     let mut device_model_items: Vec<id> = Vec::new();
     let mut device_model_thumb: id = nil;
     for (i, row) in rows.iter().enumerate() {
-        let row_center = divider + ((1 + i) as CGFloat) * 78.0 * ui_scale;
+        let row_center = divider + ((1 + i / 2) as CGFloat) * 78.0 * ui_scale;
 
         match *row {
             RowKind::Label(text) => {
