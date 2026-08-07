@@ -1450,10 +1450,10 @@ fn make_app_launcher_grid(
         };
         let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
         () = msg![env; button setFrame:icon_frame];
-        let resource = match *icon_path {
-            "/res/picker_files_icon.jpg" => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_files_icon.jpg")),
-            "/res/picker_settings_icon.jpg" => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_settings_icon.jpg")),
-            "/res/picker_touchhle_icon.png" => include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_touchhle_icon.png")),
+        let resource: &[u8] = match *icon_path {
+            "/res/picker_files_icon.jpg" => &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_files_icon.jpg"))[..],
+            "/res/picker_settings_icon.jpg" => &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_settings_icon.jpg"))[..],
+            "/res/picker_touchhle_icon.png" => &include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/res/picker_touchhle_icon.png"))[..],
             _ => unreachable!(),
         };
         let image = Image::from_bytes(resource).expect("picker icon resource must be valid");
@@ -1535,7 +1535,8 @@ fn make_button_row(
         () = msg![env; label setAdjustsFontSizeToFitWidth:true];
         () = msg![env; label setMinimumFontSize:8.0];
         () = msg![env; label setTextAlignment:UITextAlignmentCenter];
-        () = msg![env; button setTitleColor:(msg_class![env; UIColor blackColor]) forState:UIControlStateNormal];
+        let black: id = msg_class![env; UIColor blackColor];
+        () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
         () = msg![env; button setBackgroundColor:(msg_class![env; UIColor whiteColor])];
         let layer: id = msg![env; button layer];
         () = msg![env; layer setCornerRadius:(7.0 * ui_scale)];
