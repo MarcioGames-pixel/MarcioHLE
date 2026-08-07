@@ -12,7 +12,9 @@ use crate::gles::{gles11_raw as gles11, GLES};
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestISize, GuestUSize, Mem, MutPtr, MutVoidPtr, Ptr};
 use crate::objc::nil;
 use crate::Environment;
+use std::collections::HashSet;
 use std::slice::from_raw_parts;
+use std::sync::{Mutex, OnceLock};
 use touchHLE_gl_bindings::gles11::{
     ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER_BINDING, WRITE_ONLY_OES,
 };
@@ -43,6 +45,27 @@ const SUPPORTED_COMPRESSED_TEXTURE_FORMATS: &[GLenum] = &[
 
 fn trace_potatogold_render() -> bool {
     std::env::var_os("TOUCHHLE_TRACE_POTATOGOLD_RENDER").is_some()
+}
+
+fn trace_gl_error(trace: bool, err: GLenum, caller: &'static std::panic::Location<'static>) {
+    if !trace || err == 0 {
+        return;
+    }
+    static REPORTED: OnceLock<Mutex<HashSet<(&'static str, u32, GLenum)>>> = OnceLock::new();
+    let key = (caller.file(), caller.line(), err);
+    let first = REPORTED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .map(|mut reported| reported.insert(key))
+        .unwrap_or(true);
+    if first {
+        log!(
+            "[--trace-gl-errors] glGetError() = {:#x} after host GLES call dispatched from {}:{} [repeated errors suppressed]",
+            err,
+            caller.file(),
+            caller.line()
+        );
+    }
 }
 
 #[track_caller]
@@ -85,18 +108,7 @@ where
         return U::default();
     };
     let res = f(gles.as_mut(), &mut env.mem);
-    if trace {
-        let err = unsafe { gles.GetError() };
-        if err != 0 {
-            log!(
-                "[--trace-gl-errors] glGetError() = {:#x} after host GLES call \
-                 dispatched from {}:{}",
-                err,
-                caller.file(),
-                caller.line()
-            );
-        }
-    }
+    trace_gl_error(trace, unsafe { gles.GetError() }, caller);
     #[allow(clippy::let_and_return)]
     res
 }
@@ -133,18 +145,7 @@ where
         return U::default();
     };
     let res = f(gles.as_mut(), &mut env.mem);
-    if trace {
-        let err = unsafe { gles.GetError() };
-        if err != 0 {
-            log!(
-                "[--trace-gl-errors] glGetError() = {:#x} after host GLES call \
-                 dispatched from {}:{}",
-                err,
-                caller.file(),
-                caller.line()
-            );
-        }
-    }
+    trace_gl_error(trace, unsafe { gles.GetError() }, caller);
     #[allow(clippy::let_and_return)]
     res
 }
@@ -2728,22 +2729,25 @@ fn glUnmapBufferOES(env: &mut Environment, target: GLenum) -> GLboolean {
         .framework_state
         .opengles
         .current_ctx_for_thread(env.current_thread);
-    let current_ctx_host_object = env
+    let Some(current_ctx) = current_ctx else {
+        return gles11::FALSE;
+    };
+    let mapping = env
         .objc
-        .borrow_mut::<EAGLContextHostObject>(current_ctx.unwrap());
-    if let Some((guest_buffer, host_buffer)) = current_ctx_host_object
+        .borrow_mut::<EAGLContextHostObject>(current_ctx)
         .mapped_buffers
-        .remove(&buffer_object_name)
-    {
-        let buffer_size = _get_buffer_size(env, target) as u32;
-        unsafe {
-            host_buffer.copy_from(
-                env.mem.bytes_at(guest_buffer.cast(), buffer_size).as_ptr() as *mut GLvoid,
-                buffer_size as usize,
-            );
-        }
-        env.mem.free(guest_buffer);
+        .remove(&buffer_object_name);
+    let Some((guest_buffer, host_buffer)) = mapping else {
+        return gles11::FALSE;
+    };
+    let buffer_size = _get_buffer_size(env, target) as u32;
+    unsafe {
+        host_buffer.copy_from(
+            env.mem.bytes_at(guest_buffer.cast(), buffer_size).as_ptr() as *mut GLvoid,
+            buffer_size as usize,
+        );
     }
+    env.mem.free(guest_buffer);
     with_ctx_and_mem(env, |gles, _mem| unsafe { gles.UnmapBufferOES(target) })
 }
 
@@ -5099,6 +5103,9 @@ fn glProgramParameteri(env: &mut Environment, program: GLuint, pname: GLenum, va
 }
 
 unsafe fn clamp_fog_state_values(gles: &mut dyn GLES) -> Option<(f32, f32)> {
+    if gles.is_es2() {
+        return None;
+    }
     let mut fog_enabled: GLboolean = 0;
     gles.GetBooleanv(gles11::FOG, &mut fog_enabled);
     if fog_enabled != 0 {
@@ -5115,6 +5122,9 @@ unsafe fn clamp_fog_state_values(gles: &mut dyn GLES) -> Option<(f32, f32)> {
     None
 }
 unsafe fn restore_fog_state_values(gles: &mut dyn GLES, from_backup: Option<(f32, f32)>) {
+    if gles.is_es2() {
+        return;
+    }
     if let Some((fog_start, fog_end)) = from_backup {
         gles.Fogf(gles11::FOG_START, fog_start);
         gles.Fogf(gles11::FOG_END, fog_end);

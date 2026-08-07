@@ -853,13 +853,31 @@ impl GLES for GLES2Native<'_> {
         gles2::Disable(cap)
     }
     unsafe fn GetBooleanv(&mut self, pname: GLenum, params: *mut GLboolean) {
-        gles2::GetBooleanv(pname, params)
+        if params.is_null() {
+            return;
+        }
+        match pname {
+            gles11::FOG => params.write(gles2::FALSE),
+            _ => gles2::GetBooleanv(pname, params),
+        }
     }
     unsafe fn GetFloatv(&mut self, pname: GLenum, params: *mut GLfloat) {
-        gles2::GetFloatv(pname, params)
+        if params.is_null() {
+            return;
+        }
+        match pname {
+            gles11::FOG_START | gles11::FOG_END => params.write(0.0),
+            _ => gles2::GetFloatv(pname, params),
+        }
     }
     unsafe fn GetIntegerv(&mut self, pname: GLenum, params: *mut GLint) {
-        gles2::GetIntegerv(pname, params)
+        if params.is_null() {
+            return;
+        }
+        match pname {
+            gles11::FOG_START | gles11::FOG_END => params.write(0),
+            _ => gles2::GetIntegerv(pname, params),
+        }
     }
     unsafe fn Hint(&mut self, target: GLenum, mode: GLenum) {
         if is_es1_only_hint_target(target) {
