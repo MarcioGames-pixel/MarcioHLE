@@ -114,6 +114,8 @@ struct TranslatorState {
     fog_enabled: bool,
     fog_mode: GLenum,
     fog_density: GLfloat,
+    light_model_local_viewer: bool,
+    light_model_two_side: bool,
     fog_start: GLfloat,
     fog_end: GLfloat,
     fog_color: [GLfloat; 4],
@@ -186,6 +188,8 @@ impl TranslatorState {
             fog_enabled: false,
             fog_mode: es1::EXP,
             fog_density: 1.0,
+            light_model_local_viewer: false,
+            light_model_two_side: false,
             fog_start: 0.0,
             fog_end: 1.0,
             fog_color: [0.0, 0.0, 0.0, 1.0],
@@ -389,6 +393,7 @@ attribute vec4 a_matrix_index;
 attribute vec4 a_weight;
 attribute float a_point_size;
 uniform mat4 u_mvp;
+uniform mat4 u_projection;
 uniform mat4 u_modelview;
 uniform mat4 u_texture_matrix0;
 uniform vec4 u_color;
@@ -432,8 +437,8 @@ void main() {
             transformed_position += a_weight[i] * (u_palette_matrices[matrix_index] * a_position);
         }
     }
-    vec4 eye_position = u_modelview * transformed_position;
-    gl_Position = u_mvp * transformed_position;
+    vec4 eye_position = u_matrix_palette_enabled != 0 ? transformed_position : u_modelview * transformed_position;
+    gl_Position = u_matrix_palette_enabled != 0 ? u_projection * transformed_position : u_mvp * transformed_position;
     float point_distance = length(eye_position.xyz);
     float point_attenuation = sqrt(max(u_point_distance_attenuation.x + u_point_distance_attenuation.y * point_distance + u_point_distance_attenuation.z * point_distance * point_distance, 0.0001));
     gl_PointSize = (u_point_size_array_enabled != 0 ? a_point_size : u_point_size) / point_attenuation;
@@ -973,18 +978,34 @@ impl GLES for GLES1OnGLES2<'_> {
         let values: Vec<GLfloat> = std::slice::from_raw_parts(params, count).iter().map(|v| fixed_to_float(*v)).collect();
         self.Lightfv(light, pname, values.as_ptr());
     }
-    unsafe fn LightModelf(&mut self, _pname: GLenum, _param: GLfloat) {}
+    unsafe fn LightModelf(&mut self, pname: GLenum, param: GLfloat) {
+        match pname {
+            0x0B51 => self.state.light_model_local_viewer = param != 0.0,
+            es1::LIGHT_MODEL_TWO_SIDE => self.state.light_model_two_side = param != 0.0,
+            _ => {}
+        }
+    }
     unsafe fn LightModelx(&mut self, pname: GLenum, param: GLfixed) {
         self.LightModelf(pname, fixed_to_float(param));
     }
     unsafe fn LightModelfv(&mut self, pname: GLenum, params: *const GLfloat) {
-        if pname == es1::LIGHT_MODEL_AMBIENT && !params.is_null() {
+        if params.is_null() {
+            return;
+        }
+        if pname == es1::LIGHT_MODEL_AMBIENT {
             self.state.model_ambient = std::slice::from_raw_parts(params, 4).try_into().unwrap();
+        } else {
+            self.LightModelf(pname, *params);
         }
     }
     unsafe fn LightModelxv(&mut self, pname: GLenum, params: *const GLfixed) {
-        if pname == es1::LIGHT_MODEL_AMBIENT && !params.is_null() {
+        if params.is_null() {
+            return;
+        }
+        if pname == es1::LIGHT_MODEL_AMBIENT {
             self.state.model_ambient = std::slice::from_raw_parts(params, 4).iter().map(|v| fixed_to_float(*v)).collect::<Vec<_>>().try_into().unwrap();
+        } else {
+            self.LightModelf(pname, fixed_to_float(*params));
         }
     }
     unsafe fn Materialf(&mut self, face: GLenum, pname: GLenum, param: GLfloat) {
@@ -1371,6 +1392,7 @@ impl GLES for GLES1OnGLES2<'_> {
         let mvp = unsafe { self.state.mvp() };
         let mvp_loc = gl::GetUniformLocation(program, b"u_mvp\0".as_ptr() as *const _);
         gl::UniformMatrix4fv(mvp_loc, 1, gl::FALSE, mvp.as_ptr());
+        gl::UniformMatrix4fv(gl::GetUniformLocation(program, b"u_projection\0".as_ptr() as *const _), 1, gl::FALSE, self.state.projection.current.as_ptr());
         let modelview_loc = gl::GetUniformLocation(program, b"u_modelview\0".as_ptr() as *const _);
         gl::UniformMatrix4fv(modelview_loc, 1, gl::FALSE, self.state.modelview.current.as_ptr());
         let texture_matrix_loc = gl::GetUniformLocation(program, b"u_texture_matrix0\0".as_ptr() as *const _);
@@ -1420,7 +1442,7 @@ impl GLES for GLES1OnGLES2<'_> {
         gl::Uniform1i(gl::GetUniformLocation(program, b"u_point_size_array_enabled\0".as_ptr() as *const _), if self.state.point_size_array.enabled { 1 } else { 0 });
         gl::Uniform1i(gl::GetUniformLocation(program, b"u_matrix_palette_enabled\0".as_ptr() as *const _), if self.state.matrix_palette_enabled { 1 } else { 0 });
         for (i, matrix) in self.state.palette_matrices.iter().enumerate() {
-            let name = format!("u_palette_matrices[{}]\\0", i);
+            let name = format!("u_palette_matrices[{}]\0", i);
             gl::UniformMatrix4fv(gl::GetUniformLocation(program, name.as_ptr() as *const _), 1, gl::FALSE, matrix.current.as_ptr());
         }
         let tex_enabled = self.state.texture_enabled[0];
@@ -1459,6 +1481,7 @@ impl GLES for GLES1OnGLES2<'_> {
         let mvp = self.state.mvp();
         let mvp_loc = gl::GetUniformLocation(program, b"u_mvp\0".as_ptr() as *const _);
         gl::UniformMatrix4fv(mvp_loc, 1, gl::FALSE, mvp.as_ptr());
+        gl::UniformMatrix4fv(gl::GetUniformLocation(program, b"u_projection\0".as_ptr() as *const _), 1, gl::FALSE, self.state.projection.current.as_ptr());
         let modelview_loc = gl::GetUniformLocation(program, b"u_modelview\0".as_ptr() as *const _);
         gl::UniformMatrix4fv(modelview_loc, 1, gl::FALSE, self.state.modelview.current.as_ptr());
         let texture_matrix_loc = gl::GetUniformLocation(program, b"u_texture_matrix0\0".as_ptr() as *const _);
