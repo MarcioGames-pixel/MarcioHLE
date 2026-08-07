@@ -2686,7 +2686,7 @@ fn glMapBufferOES(env: &mut Environment, target: GLenum, access: GLenum) -> MutP
             env.mem.free(guest_buffer);
             return nil.cast();
         };
-        let current_ctx_host_object = env.objc.borrow_mut::<EAGLContextHostObject>(current_ctx);
+        let current_ctx_host_object = env.objc.borrow_mut::<EAGLContextHostObject>(*current_ctx);
         // Per the GL_OES_mapbuffer spec, calling glMapBufferOES while a
         // buffer is already mapped is a GL_INVALID_OPERATION and returns
         // NULL. Some apps (e.g. ZAS) accidentally re-map without unmapping
@@ -2711,7 +2711,7 @@ fn glMapBufferOES(env: &mut Environment, target: GLenum, access: GLenum) -> MutP
                 gles.UnmapBufferOES(target);
             });
             // Re-borrow because with_ctx_and_mem dropped our reference.
-            let current_ctx_host_object = env.objc.borrow_mut::<EAGLContextHostObject>(current_ctx);
+            let current_ctx_host_object = env.objc.borrow_mut::<EAGLContextHostObject>(*current_ctx);
             current_ctx_host_object
                 .mapped_buffers
                 .insert(buffer_object_name, (guest_buffer, host_buffer));
@@ -2734,7 +2734,7 @@ fn glUnmapBufferOES(env: &mut Environment, target: GLenum) -> GLboolean {
     };
     let mapping = env
         .objc
-        .borrow_mut::<EAGLContextHostObject>(current_ctx)
+        .borrow_mut::<EAGLContextHostObject>(*current_ctx)
         .mapped_buffers
         .remove(&buffer_object_name);
     let Some((guest_buffer, host_buffer)) = mapping else {
@@ -3836,7 +3836,7 @@ fn glMapBufferRange(
         .opengles
         .current_ctx_for_thread(env.current_thread);
     if let Some(ctx) = current_ctx {
-        let host_obj = env.objc.borrow_mut::<EAGLContextHostObject>(ctx);
+        let host_obj = env.objc.borrow_mut::<EAGLContextHostObject>(*ctx);
         host_obj
             .mapped_buffers
             .insert(target, (guest_buf, host_ptr));

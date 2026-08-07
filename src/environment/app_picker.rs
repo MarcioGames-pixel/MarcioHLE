@@ -658,29 +658,13 @@ fn app_picker_inner(
 
     let buttons_row_center = divider + (app_frame.size.height - divider) / 4.0;
     let buttons_row2_center = divider + (app_frame.size.height - divider) / 1.6;
-    make_button_row(
+    make_app_launcher_grid(
         env,
         delegate,
         main_view,
         app_frame.size,
         buttons_row_center,
-        &[
-            ("Add game folder", "openFileManager"),
-            ("Settings", "quickOptionsShow"),
-        ],
-        None,
-    );
-    make_button_row(
-        env,
-        delegate,
-        main_view,
-        app_frame.size,
         buttons_row2_center,
-        &[
-            ("Copyright info", "copyrightInfoShow"),
-            ("RadekHLE", "visitWebsite"),
-        ],
-        None,
     );
 
     let copyright_info_text = crate::licenses::get_text();
@@ -1424,6 +1408,93 @@ fn update_icon_grid(
     for &(icon_button, label) in icon_iter {
         () = msg![env; icon_button setImage:nil forState:UIControlStateNormal];
         () = msg![env; label setText:(ns_string::get_static_str(env, ""))];
+    }
+}
+
+fn make_app_launcher_grid(
+    env: &mut Environment,
+    delegate: id,
+    super_view: id,
+    super_view_size: CGSize,
+    first_row_center: CGFloat,
+    second_row_center: CGFloat,
+) {
+    let ui_scale = picker_ui_scale(super_view_size);
+    let short_side = super_view_size.width.min(super_view_size.height);
+    let icon_size = (58.0 * ui_scale).min(short_side * 0.22).max(42.0);
+    let card_width = (super_view_size.width * 0.36).max(icon_size + 12.0 * ui_scale);
+    let items = [
+        ("Files", "openFileManager", '📁'),
+        ("Settings", "quickOptionsShow", '⚙'),
+        ("Info", "copyrightInfoShow", 'ⓘ'),
+        ("TouchHLE.org", "visitWebsite", '◆'),
+    ];
+    for (index, (title, selector_name, glyph)) in items.iter().enumerate() {
+        let row = index / 2;
+        let column = index % 2;
+        let center = if row == 0 { first_row_center } else { second_row_center };
+        let card_center_x = if column == 0 {
+            super_view_size.width * 0.32
+        } else {
+            super_view_size.width * 0.68
+        };
+        let icon_frame = CGRect {
+            origin: CGPoint {
+                x: (card_center_x - icon_size / 2.0).round(),
+                y: (center - icon_size / 2.0 - 5.0 * ui_scale).round(),
+            },
+            size: CGSize {
+                width: icon_size,
+                height: icon_size,
+            },
+        };
+        let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
+        () = msg![env; button setFrame:icon_frame];
+        let image = make_icon_from_glyph(
+            env,
+            *glyph,
+            (30.0 * ui_scale).max(24.0),
+            0.0,
+            (0.18, 0.18, 0.22, 0.94),
+        );
+        () = msg![env; button setImage:image forState:UIControlStateNormal];
+        let image_view: id = msg![env; button imageView];
+        let inset = (5.0 * ui_scale).min(icon_size * 0.16);
+        () = msg![env; image_view setFrame:(CGRect {
+            origin: CGPoint { x: inset, y: inset },
+            size: CGSize {
+                width: (icon_size - inset * 2.0).max(1.0),
+                height: (icon_size - inset * 2.0).max(1.0),
+            },
+        })];
+        let selector = env.objc.lookup_selector(selector_name).unwrap();
+        () = msg![env; button addTarget:delegate
+                                 action:selector
+                       forControlEvents:UIControlEventTouchUpInside];
+        () = msg![env; super_view addSubview:button];
+
+        let label_frame = CGRect {
+            origin: CGPoint {
+                x: (card_center_x - card_width / 2.0).round(),
+                y: (icon_frame.origin.y + icon_size + 3.0 * ui_scale).round(),
+            },
+            size: CGSize {
+                width: card_width,
+                height: (16.0 * ui_scale).max(14.0),
+            },
+        };
+        let label: id = msg_class![env; UILabel alloc];
+        let label: id = msg![env; label initWithFrame:label_frame];
+        let text = ns_string::get_static_str(env, title);
+        () = msg![env; label setText:text];
+        () = msg![env; label setTextAlignment:UITextAlignmentCenter];
+        let font = picker_font(env, (10.5 * ui_scale).max(9.0));
+        () = msg![env; label setFont:font];
+        () = msg![env; label setAdjustsFontSizeToFitWidth:true];
+        () = msg![env; label setMinimumFontSize:7.0];
+        let text_color: id = msg_class![env; UIColor whiteColor];
+        () = msg![env; label setTextColor:text_color];
+        () = msg![env; super_view addSubview:label];
     }
 }
 
