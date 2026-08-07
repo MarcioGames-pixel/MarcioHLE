@@ -1162,23 +1162,24 @@ fn make_icon_grid(
 ) -> IconGridStuff {
     let ui_scale = picker_ui_scale(app_frame.size);
     let short_side = app_frame.size.width.min(app_frame.size.height);
+    let icon_size_value = (56.0 * ui_scale).min(short_side * 0.22).max(48.0);
     let icon_size = CGSize {
-        width: 70.0 * ui_scale,
-        height: 70.0 * ui_scale,
+        width: icon_size_value,
+        height: icon_size_value,
     };
     let num_cols = 4;
     let num_cols_f = num_cols as CGFloat;
-    let num_rows = 4;
+    let num_rows = if app_frame.size.height >= 640.0 * ui_scale { 5 } else { 4 };
     let label_size = CGSize {
-        width: icon_size.width + 16.0 * ui_scale,
-        height: 28.0 * ui_scale,
+        width: icon_size.width + 14.0 * ui_scale,
+        height: 22.0 * ui_scale,
     };
     let icon_gap_x: CGFloat = (short_side * 0.028).clamp(8.0, 22.0);
-    let icon_gap_y: CGFloat = (short_side * 0.012).clamp(4.0, 12.0) + label_size.height;
+    let icon_gap_y: CGFloat = (short_side * 0.008).clamp(3.0, 8.0) + label_size.height;
     let icon_grid_width = (icon_size.width * num_cols_f) + icon_gap_x * (num_cols_f - 1.0);
     let icon_grid_origin = CGPoint {
         x: (app_frame.size.width - icon_grid_width) / 2.0,
-        y: 12.0 * ui_scale,
+        y: 16.0 * ui_scale,
     };
 
     let icon_tapped_sel = env.objc.lookup_selector("iconTapped:").unwrap();
@@ -1424,7 +1425,7 @@ fn make_app_launcher_grid(
 ) {
     let ui_scale = picker_ui_scale(super_view_size);
     let short_side = super_view_size.width.min(super_view_size.height);
-    let icon_size = (64.0 * ui_scale).min(short_side * 0.24).max(42.0);
+    let icon_size = (56.0 * ui_scale).min(short_side * 0.22).max(40.0);
     let card_width = (super_view_size.width * 0.40).max(icon_size + 12.0 * ui_scale);
     let items = [
         ("Files", "openFileManager", "/res/picker_files_icon.jpg"),
@@ -1856,7 +1857,7 @@ fn setup_quick_options(
     () = msg![env; main_view setScrollEnabled:true];
     () = msg![env; main_view setShowsVerticalScrollIndicator:true];
     () = msg![env; main_view setAlwaysBounceVertical:true];
-    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.90 alpha:1.0];
+    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.94 alpha:1.0];
     () = msg![env; main_view setBackgroundColor:bg_color];
     // This main_view is hidden until the copyright info button is tapped.
     () = msg![env; main_view setHidden:true];
