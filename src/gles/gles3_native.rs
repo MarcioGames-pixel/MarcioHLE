@@ -1199,6 +1199,27 @@ impl GLES for GLES3Native<'_> {
     // keeps the existing `present_renderbuffer` save/restore code paths quiet
     // without crashing. Real apps that rely on a true ES 2.0 driver will not
     // call these.
+    unsafe fn Fogf(&mut self, _pname: GLenum, _param: GLfloat) {}
+    unsafe fn Fogx(&mut self, _pname: GLenum, _param: GLfixed) {}
+    unsafe fn Fogfv(&mut self, _pname: GLenum, _params: *const GLfloat) {}
+    unsafe fn Fogxv(&mut self, _pname: GLenum, _params: *const GLfixed) {}
+    unsafe fn Lightf(&mut self, _light: GLenum, _pname: GLenum, _param: GLfloat) {}
+    unsafe fn Lightx(&mut self, _light: GLenum, _pname: GLenum, _param: GLfixed) {}
+    unsafe fn Lightfv(&mut self, _light: GLenum, _pname: GLenum, _params: *const GLfloat) {}
+    unsafe fn Lightxv(&mut self, _light: GLenum, _pname: GLenum, _params: *const GLfixed) {}
+    unsafe fn LightModelf(&mut self, _pname: GLenum, _param: GLfloat) {}
+    unsafe fn LightModelx(&mut self, _pname: GLenum, _param: GLfixed) {}
+    unsafe fn LightModelfv(&mut self, _pname: GLenum, _params: *const GLfloat) {}
+    unsafe fn LightModelxv(&mut self, _pname: GLenum, _params: *const GLfixed) {}
+    unsafe fn Materialf(&mut self, _face: GLenum, _pname: GLenum, _param: GLfloat) {}
+    unsafe fn Materialx(&mut self, _face: GLenum, _pname: GLenum, _param: GLfixed) {}
+    unsafe fn Materialfv(&mut self, _face: GLenum, _pname: GLenum, _params: *const GLfloat) {}
+    unsafe fn Materialxv(&mut self, _face: GLenum, _pname: GLenum, _params: *const GLfixed) {}
+    unsafe fn GetLightfv(&mut self, _light: GLenum, _pname: GLenum, _params: *mut GLfloat) {}
+    unsafe fn GetLightxv(&mut self, _light: GLenum, _pname: GLenum, _params: *mut GLfixed) {}
+    unsafe fn GetMaterialfv(&mut self, _face: GLenum, _pname: GLenum, _params: *mut GLfloat) {}
+    unsafe fn GetMaterialxv(&mut self, _face: GLenum, _pname: GLenum, _params: *mut GLfixed) {}
+
     unsafe fn ClientActiveTexture(&mut self, _texture: GLenum) {}
     unsafe fn EnableClientState(&mut self, _array: GLenum) {}
     unsafe fn DisableClientState(&mut self, _array: GLenum) {}

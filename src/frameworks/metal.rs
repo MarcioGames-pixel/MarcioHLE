@@ -8,7 +8,7 @@
 //! Metal is a native Apple GPU API, while HyperHLE renders through its
 //! portable GLES presentation path. This layer intentionally provides the
 //! object and descriptor contract used during app startup and resource setup;
-//! it does not pretend to execute Metal command streams on non-Apple hosts.
+//! it records the guest command stream for the ARM64 compatibility presenter.
 
 use crate::dyld::{ConstantExports, HostDylib};
 use crate::frameworks::foundation::{ns_string, NSUInteger};

@@ -19,7 +19,7 @@ const MAX_HOST_DISPATCHES: u64 = 1_000_000;
 const A64_HALT_USER_DEFINED1: u32 = 0x0100_0000;
 const A64_HALT_USER_DEFINED2: u32 = 0x0200_0000;
 const A64_HALT_USER_DEFINED3: u32 = 0x0400_0000;
-const STARTUP_TRACE_INSTRUCTIONS: u64 = 100;
+const STARTUP_TRACE_INSTRUCTIONS: u64 = 10_000;
 const STALL_THRESHOLD: u64 = 512;
 const EXECUTION_SLICE_TICKS: u64 = 1_000;
 
@@ -58,6 +58,14 @@ fn decode_instruction(instruction: u32, pc: u64) -> String {
 
 fn register_dump(context: &touchHLE_DynarmicA64Context) -> String {
     context.regs.iter().enumerate().map(|(index, value)| format!("x{index}={value:#018x}")).collect::<Vec<_>>().join(" ")
+}
+
+fn vector_dump(context: &touchHLE_DynarmicA64Context) -> String {
+    context.vectors.iter().enumerate().map(|(index, value)| format!("v{index}={:#018x}{:#018x}", value[1], value[0])).collect::<Vec<_>>().join(" ")
+}
+
+fn processor_state_dump(context: &touchHLE_DynarmicA64Context) -> String {
+    format!("pstate={:#010x} fpcr={:#010x} fpsr={:#010x} {}", context.pstate, context.fpcr, context.fpsr, vector_dump(context))
 }
 
 fn stack_dump(memory: &Mem64, sp: u64) -> String {
@@ -125,6 +133,7 @@ fn failure_diagnostics(
     let instruction = memory.read_u32(context.pc).unwrap_or(0);
     echo!("ARM64 failure diagnostics: reason={} pc={:#x} instruction={:#010x} decoded={}", reason, context.pc, instruction, decode_instruction(instruction, context.pc));
     echo!("ARM64 failure registers: {}", register_dump(context));
+    echo!("ARM64 failure processor state: {}", processor_state_dump(context));
     echo!("ARM64 failure previous_pcs={:?} branch_history={:?}", previous_pcs, previous_branches);
     echo!("ARM64 failure stack: {}", stack_dump(memory, context.sp));
     echo!("ARM64 failure call stack: {}", call_stack_dump(memory, context));
@@ -229,23 +238,15 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         .collect::<Vec<_>>();
     let apple = vec![format!("executable_path={}", executable_path.as_str())];
     let ios_version = options.ios_version.unwrap_or(crate::options::LATEST_IOS_VERSION);
-    let uses_metal = executable
-        .dynamic_libraries
-        .iter()
-        .any(|library| library.contains("/Metal.framework/") || library.ends_with("/Metal"))
-        || executable
-            .bindings
-            .iter()
-            .any(|binding| binding.symbol.contains("MTL"));
     let graphics_backend = match options.graphics_api {
-        crate::options::GraphicsApi::Metal => A64GraphicsBackend::MetalCompatibility,
-        crate::options::GraphicsApi::Default if uses_metal => A64GraphicsBackend::MetalCompatibility,
         crate::options::GraphicsApi::GLES10
         | crate::options::GraphicsApi::GLES11
         | crate::options::GraphicsApi::GLES20
         | crate::options::GraphicsApi::GLES30
         | crate::options::GraphicsApi::Translator => A64GraphicsBackend::OpenGLESCompatibility,
-        crate::options::GraphicsApi::Default => A64GraphicsBackend::OpenGLESCompatibility,
+        crate::options::GraphicsApi::Default | crate::options::GraphicsApi::Metal => {
+            A64GraphicsBackend::MetalCompatibility
+        }
     };
     let mut runtime_state = RuntimeState::new(ios_version, graphics_backend);
     runtime_state.current_module = Some(executable.name.clone());
@@ -266,7 +267,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         )))
     };
     echo!(
-        "ARM64 graphics backend selected: {} (Metal is a guest compatibility API; the host presenter remains GLES because SDL creates the display surface)",
+        "ARM64 graphics backend selected: {} (64-bit default is Metal guest routing; host presentation uses the portable SDL surface)",
         graphics_backend.label()
     );
     log_dbg!(
@@ -367,6 +368,9 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     echo!("ARM64 execution mode: Dynarmic single-cycle execution is active for the startup trace; each call must return after one cycle");
     loop {
         let trace_this_instruction = trace_count < STARTUP_TRACE_INSTRUCTIONS;
+        if trace_count == 0 {
+            echo!("ARM64 detailed tracing enabled: instruction_limit={} host_calls=all objc_messages=all metal_calls=all", STARTUP_TRACE_INSTRUCTIONS);
+        }
         let instruction_pc = context.pc;
         let instruction = memory.read_u32(instruction_pc).unwrap_or(0);
         let mut startup_ticks = 1_u64;
@@ -395,7 +399,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
             trace_count += 1;
             let instruction_executed = result == -1 || result >= 0;
             echo!(
-                "ARM64 single-cycle return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={}",
+                "ARM64 single-cycle return #{}: result={} executed={} entry_pc={:#x} final_pc={:#x} sp={:#x} lr={:#x} fp={:#x} instruction={:#010x} decoded={} {}",
                 trace_count,
                 result,
                 instruction_executed,
@@ -406,6 +410,7 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                 context.regs[29],
                 instruction,
                 decode_instruction(instruction, instruction_pc),
+                processor_state_dump(&context),
             );
             if trace_count == 1 {
                 if instruction_executed {
@@ -533,8 +538,10 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
                         context.regs[5],
                     );
                     echo!("ARM64 host stub complete register dump: {}", register_dump(&context));
+                    echo!("ARM64 host stub processor state: {}", processor_state_dump(&context));
                 }
                 verify_abi(&context, symbol);
+                echo!("ARM64 host binding full trace #{}: symbol={} pc={:#x} sp={:#x} lr={:#x} {}", host_dispatches, symbol, context.pc, context.sp, context.regs[30], processor_state_dump(&context));
                 runtime_state.last_symbol = Some(symbol.to_owned());
                 let handled = match dispatch(&mut memory, &mut context, symbol, &mut runtime_state) {
                     Ok(handled) => {

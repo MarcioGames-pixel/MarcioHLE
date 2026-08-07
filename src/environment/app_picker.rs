@@ -1425,7 +1425,7 @@ fn make_app_launcher_grid(
 ) {
     let ui_scale = picker_ui_scale(super_view_size);
     let short_side = super_view_size.width.min(super_view_size.height);
-    let icon_size = (56.0 * ui_scale).min(short_side * 0.22).max(40.0);
+    let icon_size = (52.0 * ui_scale).min(short_side * 0.21).max(38.0);
     let card_width = (super_view_size.width * 0.40).max(icon_size + 12.0 * ui_scale);
     let items = [
         ("Files", "openFileManager", "/res/picker_files_icon.jpg"),
@@ -1481,11 +1481,11 @@ fn make_app_launcher_grid(
         let label_frame = CGRect {
             origin: CGPoint {
                 x: (card_center_x - card_width / 2.0).round(),
-                y: (icon_frame.origin.y + icon_size + 5.0 * ui_scale).round(),
+                y: (icon_frame.origin.y + icon_size + 4.0 * ui_scale).round(),
             },
             size: CGSize {
                 width: card_width,
-                height: (18.0 * ui_scale).max(14.0),
+                height: (17.0 * ui_scale).max(13.0),
             },
         };
         let label: id = msg_class![env; UILabel alloc];
@@ -1547,7 +1547,7 @@ fn make_button_row(
         let black: id = msg_class![env; UIColor blackColor];
         () = msg![env; button setTitleColor:black forState:UIControlStateNormal];
         let white: id = msg_class![env; UIColor whiteColor];
-        () = msg![env; button setBackgroundColor:white];
+        let _: () = msg![env; button setBackgroundColor:white];
         let layer: id = msg![env; button layer];
         () = msg![env; layer setCornerRadius:(7.0 * ui_scale)];
         () = msg![env; button layoutSubviews];

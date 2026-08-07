@@ -963,6 +963,7 @@ impl GLES for GLES1OnGLES2<'_> {
             es1::DIFFUSE => self.state.light0_diffuse = std::slice::from_raw_parts(params, 4).try_into().unwrap(),
             es1::SPECULAR => self.state.light0_specular = std::slice::from_raw_parts(params, 4).try_into().unwrap(),
             es1::POSITION => self.state.light0_position = std::slice::from_raw_parts(params, 4).try_into().unwrap(),
+            es1::SPOT_DIRECTION => self.state.light0_spot_direction = std::slice::from_raw_parts(params, 3).try_into().unwrap(),
             _ => {}
         }
     }
@@ -970,15 +971,9 @@ impl GLES for GLES1OnGLES2<'_> {
         if params.is_null() { return; }
         let count = if pname == es1::SPOT_DIRECTION { 3 } else { 4 };
         let values: Vec<GLfloat> = std::slice::from_raw_parts(params, count).iter().map(|v| fixed_to_float(*v)).collect();
-        if pname == es1::SPOT_DIRECTION {
-            if light == es1::LIGHT0 { self.state.light0_spot_direction = values.try_into().unwrap(); }
-        } else {
-            self.Lightfv(light, pname, values.as_ptr());
-        }
+        self.Lightfv(light, pname, values.as_ptr());
     }
-    unsafe fn LightModelf(&mut self, pname: GLenum, param: GLfloat) {
-        if pname == es1::LIGHT_MODEL_TWO_SIDE { return; }
-    }
+    unsafe fn LightModelf(&mut self, _pname: GLenum, _param: GLfloat) {}
     unsafe fn LightModelx(&mut self, pname: GLenum, param: GLfixed) {
         self.LightModelf(pname, fixed_to_float(param));
     }
@@ -1004,7 +999,11 @@ impl GLES for GLES1OnGLES2<'_> {
         let values: [GLfloat; 4] = std::slice::from_raw_parts(params, 4).try_into().unwrap();
         match pname {
             es1::AMBIENT => self.state.material_ambient = values,
-            es1::DIFFUSE | es1::AMBIENT_AND_DIFFUSE => self.state.material_diffuse = values,
+            es1::DIFFUSE => self.state.material_diffuse = values,
+            es1::AMBIENT_AND_DIFFUSE => {
+                self.state.material_ambient = values;
+                self.state.material_diffuse = values;
+            }
             es1::SPECULAR => self.state.material_specular = values,
             _ => {}
         }
@@ -1244,9 +1243,11 @@ impl GLES for GLES1OnGLES2<'_> {
     }
     unsafe fn Fogx(&mut self, pname: GLenum, param: GLfixed) { self.Fogf(pname, fixed_to_float(param)); }
     unsafe fn Fogfv(&mut self, pname: GLenum, params: *const GLfloat) {
+        if params.is_null() { return; }
         if pname == es1::FOG_COLOR { self.state.fog_color = std::slice::from_raw_parts(params, 4).try_into().unwrap(); } else { self.Fogf(pname, *params); }
     }
     unsafe fn Fogxv(&mut self, pname: GLenum, params: *const GLfixed) {
+        if params.is_null() { return; }
         if pname == es1::FOG_COLOR { self.state.fog_color = std::slice::from_raw_parts(params, 4).iter().map(|v| fixed_to_float(*v)).collect::<Vec<_>>().try_into().unwrap(); } else { self.Fogx(pname, *params); }
     }
     unsafe fn GetClipPlanef(&mut self, plane: GLenum, equation: *mut GLfloat) {
@@ -1588,9 +1589,55 @@ impl GLES1OnGLES2<'_> {
             return;
         }
         if array.buffer_binding != 0 {
-            gl::BindBuffer(gl::ARRAY_BUFFER, array.buffer_binding);
-            gl::EnableVertexAttribArray(index);
-            gl::VertexAttribPointer(index, array.size, array.type_, if array.normalized { gl::TRUE } else { gl::FALSE }, array.stride, array.pointer);
+            let Some(bytes) = self.state.array_buffer_data.get(&array.buffer_binding) else {
+                gl::DisableVertexAttribArray(index);
+                return;
+            };
+            let component_size = match array.type_ {
+                gl::BYTE | gl::UNSIGNED_BYTE => 1usize,
+                gl::SHORT | gl::UNSIGNED_SHORT => 2usize,
+                gl::FIXED | gl::FLOAT => 4usize,
+                _ => {
+                    gl::DisableVertexAttribArray(index);
+                    return;
+                }
+            };
+            let components = array.size.max(1) as usize;
+            let stride = if array.stride > 0 { array.stride as usize } else { components * component_size };
+            let offset = array.pointer as usize;
+            let first = first.max(0) as usize;
+            let count = count.max(0) as usize;
+            let upload_count = first.saturating_add(count);
+            let required = upload_count.saturating_sub(1).saturating_mul(stride).saturating_add(components * component_size);
+            if offset > bytes.len() || required > bytes.len().saturating_sub(offset) {
+                gl::DisableVertexAttribArray(index);
+                return;
+            }
+            let vbo_slot = (index as usize).min(self.state.client_array_vbos.len() - 1);
+            if self.state.client_array_vbos[vbo_slot] == 0 {
+                gl::GenBuffers(1, &mut self.state.client_array_vbos[vbo_slot]);
+            }
+            let vbo = self.state.client_array_vbos[vbo_slot];
+            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+            if array.type_ == gl::FIXED {
+                let source = &bytes[offset..offset + required];
+                let mut converted = Vec::with_capacity(upload_count * components * std::mem::size_of::<GLfloat>());
+                for vertex in 0..upload_count {
+                    let base = vertex.saturating_mul(stride);
+                    for component in 0..components {
+                        let start = base + component * 4;
+                        let value = GLfixed::from_ne_bytes(source[start..start + 4].try_into().unwrap());
+                        converted.extend_from_slice(&fixed_to_float(value).to_ne_bytes());
+                    }
+                }
+                gl::BufferData(gl::ARRAY_BUFFER, converted.len() as GLsizeiptr, converted.as_ptr().cast(), gl::STREAM_DRAW);
+                gl::EnableVertexAttribArray(index);
+                gl::VertexAttribPointer(index, array.size, gl::FLOAT, if array.normalized { gl::TRUE } else { gl::FALSE }, (components * std::mem::size_of::<GLfloat>()) as GLsizei, std::ptr::null());
+            } else {
+                gl::BufferData(gl::ARRAY_BUFFER, required as GLsizeiptr, bytes[offset..offset + required].as_ptr().cast(), gl::STREAM_DRAW);
+                gl::EnableVertexAttribArray(index);
+                gl::VertexAttribPointer(index, array.size, array.type_, if array.normalized { gl::TRUE } else { gl::FALSE }, array.stride, std::ptr::null());
+            }
             return;
         }
         if array.pointer.is_null() || count <= 0 || array.size <= 0 {

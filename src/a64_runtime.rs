@@ -214,15 +214,17 @@ fn objc_send(
     let kind = objc_kind(mem, receiver).unwrap_or(A64_KIND_GENERIC);
     let class_name = objc_field(mem, receiver, 56);
 
-    if state.objc_messages <= 128 || state.objc_messages.is_power_of_two() {
-        log_dbg!(
-            "ARM64 Objective-C message #{}: receiver={:#x} kind={} selector={}",
-            state.objc_messages,
-            receiver,
-            kind,
-            selector
-        );
-    }
+    log_dbg!(
+        "ARM64 Objective-C message #{}: receiver={:#x} kind={} selector={} x2={:#x} x3={:#x} x4={:#x} x5={:#x}",
+        state.objc_messages,
+        receiver,
+        kind,
+        selector,
+        context.regs[2],
+        context.regs[3],
+        context.regs[4],
+        context.regs[5]
+    );
     if matches!(selector.as_str(), "commit" | "waitUntilCompleted" | "presentDrawable:" | "endEncoding") {
         state.metal_commands = state.metal_commands.saturating_add(1);
     }
@@ -235,6 +237,9 @@ fn objc_send(
         "release" => 0,
         "class" => receiver,
         "respondsToSelector:" | "isKindOfClass:" | "hasUnifiedMemory" => 1,
+        "status" if kind == A64_KIND_COMMAND_BUFFER => 4,
+        "error" if kind == A64_KIND_COMMAND_BUFFER => 0,
+        "newFence" | "newEvent" | "newHeapWithDescriptor:" | "newArgumentEncoderWithArguments:" => objc_object(mem, A64_KIND_GENERIC)?,
         "mainBundle" if kind == A64_KIND_CLASS && objc_text_eq(mem, class_name, b"NSBundle") => objc_bundle(mem)?,
         "bundleIdentifier" if kind == A64_KIND_BUNDLE => objc_field(mem, receiver, 64),
         "bundlePath" | "resourcePath" if kind == A64_KIND_BUNDLE => objc_field(mem, receiver, 56),
@@ -256,10 +261,30 @@ fn objc_send(
             mem,
             &format!("{}.{}.{}", state.ios_version.0, state.ios_version.1, state.ios_version.2),
         )?,
+        "operatingSystemVersion" => {
+            context.regs[0] = (state.ios_version.0 as u32 as u64)
+                | ((state.ios_version.1 as u32 as u64) << 32);
+            context.regs[1] = state.ios_version.2 as u32 as u64;
+            0
+        }
+        "isOperatingSystemAtLeastVersion:" => {
+            let requested_major = context.regs[2] as i32;
+            let requested_minor = (context.regs[2] >> 32) as u32 as i32;
+            let requested_patch = context.regs[3] as u32 as i32;
+            u64::from(
+                (state.ios_version.0, state.ios_version.1, state.ios_version.2)
+                    >= (requested_major, requested_minor, requested_patch),
+            )
+        }
         "supportsFamily:" | "supportsFeatureSet:" => 1,
         "supportsTextureSampleCount:" => u64::from(matches!(context.regs[2], 1 | 2 | 4)),
         "setClearColor:" => {
             state.clear_color = metal_clear_color(context);
+            0
+        }
+        "setLabel:" | "setCullMode:" | "setFrontFacingWinding:" | "setTriangleFillMode:" | "setDepthStencilState:" | "setViewport:" | "setScissorRect:" | "setVertexBytes:length:atIndex:" | "setFragmentBytes:length:atIndex:" | "setVertexBufferOffset:atIndex:" | "setFragmentBufferOffset:atIndex:" => 0,
+        "drawPrimitives:vertexStart:vertexCount:" | "drawIndexedPrimitives:indexCount:indexType:indexBuffer:indexBufferOffset:" | "dispatchThreadgroups:threadsPerThreadgroup:" => {
+            state.metal_commands = state.metal_commands.saturating_add(1);
             0
         }
         "name" => objc_string(mem, "RadekHLE Metal device")?,
@@ -278,6 +303,7 @@ fn objc_send(
         "blitCommandEncoder" => objc_object(mem, A64_KIND_BLIT_ENCODER)?,
         "newRenderPipelineStateWithDescriptor:error:" => objc_object(mem, A64_KIND_PIPELINE)?,
         "newDepthStencilStateWithDescriptor:" | "newSamplerStateWithDescriptor:" => objc_object(mem, A64_KIND_GENERIC)?,
+        "newTextureViewWithPixelFormat:" => objc_object(mem, A64_KIND_TEXTURE)?,
         "newBufferWithLength:options:" => {
             let object = objc_object(mem, A64_KIND_BUFFER)?;
             let length = context.regs[2];
