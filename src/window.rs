@@ -66,6 +66,22 @@ pub enum DeviceFamily {
     iPhone13,
     iPhone13Pro,
     iPhone13ProMax,
+    iPhone14,
+    iPhone14Plus,
+    iPhone14Pro,
+    iPhone14ProMax,
+    iPhone15,
+    iPhone15Plus,
+    iPhone15Pro,
+    iPhone15ProMax,
+    iPhone16,
+    iPhone16Plus,
+    iPhone16Pro,
+    iPhone16ProMax,
+    iPhone16e,
+    iPhone17,
+    iPhone17Pro,
+    iPhone17ProMax,
     iPad,
     iPad2,
     iPad3,
@@ -118,6 +134,22 @@ impl DeviceFamily {
             DeviceFamily::iPhone13 => "iPhone 13",
             DeviceFamily::iPhone13Pro => "iPhone 13 Pro",
             DeviceFamily::iPhone13ProMax => "iPhone 13 Pro Max",
+            DeviceFamily::iPhone14 => "iPhone 14",
+            DeviceFamily::iPhone14Plus => "iPhone 14 Plus",
+            DeviceFamily::iPhone14Pro => "iPhone 14 Pro",
+            DeviceFamily::iPhone14ProMax => "iPhone 14 Pro Max",
+            DeviceFamily::iPhone15 => "iPhone 15",
+            DeviceFamily::iPhone15Plus => "iPhone 15 Plus",
+            DeviceFamily::iPhone15Pro => "iPhone 15 Pro",
+            DeviceFamily::iPhone15ProMax => "iPhone 15 Pro Max",
+            DeviceFamily::iPhone16 => "iPhone 16",
+            DeviceFamily::iPhone16Plus => "iPhone 16 Plus",
+            DeviceFamily::iPhone16Pro => "iPhone 16 Pro",
+            DeviceFamily::iPhone16ProMax => "iPhone 16 Pro Max",
+            DeviceFamily::iPhone16e => "iPhone 16e",
+            DeviceFamily::iPhone17 => "iPhone 17",
+            DeviceFamily::iPhone17Pro => "iPhone 17 Pro",
+            DeviceFamily::iPhone17ProMax => "iPhone 17 Pro Max",
             DeviceFamily::iPad => "iPad",
             DeviceFamily::iPad2 => "iPad 2",
             DeviceFamily::iPad3 => "iPad 3",
@@ -193,6 +225,22 @@ impl DeviceFamily {
                 | DeviceFamily::iPhone13
                 | DeviceFamily::iPhone13Pro
                 | DeviceFamily::iPhone13ProMax
+                | DeviceFamily::iPhone14
+                | DeviceFamily::iPhone14Plus
+                | DeviceFamily::iPhone14Pro
+                | DeviceFamily::iPhone14ProMax
+                | DeviceFamily::iPhone15
+                | DeviceFamily::iPhone15Plus
+                | DeviceFamily::iPhone15Pro
+                | DeviceFamily::iPhone15ProMax
+                | DeviceFamily::iPhone16
+                | DeviceFamily::iPhone16Plus
+                | DeviceFamily::iPhone16Pro
+                | DeviceFamily::iPhone16ProMax
+                | DeviceFamily::iPhone16e
+                | DeviceFamily::iPhone17
+                | DeviceFamily::iPhone17Pro
+                | DeviceFamily::iPhone17ProMax
                 | DeviceFamily::iPodTouch4
                 | DeviceFamily::iPodTouch5
                 | DeviceFamily::iPad3
@@ -213,7 +261,11 @@ impl DeviceFamily {
             DeviceFamily::iPhone11 | DeviceFamily::iPhone12 | DeviceFamily::iPhone13 => (390, 844),
             DeviceFamily::iPhone11Pro | DeviceFamily::iPhone12Pro | DeviceFamily::iPhone13Pro => (375, 812),
             DeviceFamily::iPhone11ProMax | DeviceFamily::iPhone12ProMax | DeviceFamily::iPhone13ProMax => (414, 896),
-            DeviceFamily::iPhone12Mini | DeviceFamily::iPhone13Mini => (360, 780),
+            DeviceFamily::iPhone14 | DeviceFamily::iPhone15 | DeviceFamily::iPhone16 | DeviceFamily::iPhone17 => (390, 844),
+            DeviceFamily::iPhone14Plus | DeviceFamily::iPhone15Plus | DeviceFamily::iPhone16Plus => (428, 926),
+            DeviceFamily::iPhone14Pro | DeviceFamily::iPhone15Pro | DeviceFamily::iPhone16Pro | DeviceFamily::iPhone17Pro => (393, 852),
+            DeviceFamily::iPhone14ProMax | DeviceFamily::iPhone15ProMax | DeviceFamily::iPhone16ProMax | DeviceFamily::iPhone17ProMax => (430, 932),
+            DeviceFamily::iPhone16e => (390, 844),
             _ if self.is_ipad() => (768, 1024),
             _ if self.is_phone_568() => (320, 568),
             _ => (320, 480),
@@ -229,6 +281,10 @@ impl DeviceFamily {
             | DeviceFamily::iPhone12Mini | DeviceFamily::iPhone12 | DeviceFamily::iPhone12Pro
             | DeviceFamily::iPhone12ProMax | DeviceFamily::iPhone13Mini | DeviceFamily::iPhone13
             | DeviceFamily::iPhone13Pro | DeviceFamily::iPhone13ProMax => 3.0,
+            DeviceFamily::iPhone14 | DeviceFamily::iPhone14Plus | DeviceFamily::iPhone14Pro | DeviceFamily::iPhone14ProMax
+            | DeviceFamily::iPhone15 | DeviceFamily::iPhone15Plus | DeviceFamily::iPhone15Pro | DeviceFamily::iPhone15ProMax
+            | DeviceFamily::iPhone16 | DeviceFamily::iPhone16Plus | DeviceFamily::iPhone16Pro | DeviceFamily::iPhone16ProMax
+            | DeviceFamily::iPhone16e | DeviceFamily::iPhone17 | DeviceFamily::iPhone17Pro | DeviceFamily::iPhone17ProMax => 3.0,
             _ if self.is_retina() => 2.0,
             _ => 1.0,
         }
@@ -267,6 +323,22 @@ impl DeviceFamily {
             DeviceFamily::iPhone13 => "iPhone14,5",
             DeviceFamily::iPhone13Pro => "iPhone14,2",
             DeviceFamily::iPhone13ProMax => "iPhone14,3",
+            DeviceFamily::iPhone14 => "iPhone14,7",
+            DeviceFamily::iPhone14Plus => "iPhone14,8",
+            DeviceFamily::iPhone14Pro => "iPhone15,2",
+            DeviceFamily::iPhone14ProMax => "iPhone15,3",
+            DeviceFamily::iPhone15 => "iPhone15,4",
+            DeviceFamily::iPhone15Plus => "iPhone15,5",
+            DeviceFamily::iPhone15Pro => "iPhone16,1",
+            DeviceFamily::iPhone15ProMax => "iPhone16,2",
+            DeviceFamily::iPhone16 => "iPhone17,3",
+            DeviceFamily::iPhone16Plus => "iPhone17,4",
+            DeviceFamily::iPhone16Pro => "iPhone17,1",
+            DeviceFamily::iPhone16ProMax => "iPhone17,2",
+            DeviceFamily::iPhone16e => "iPhone17,5",
+            DeviceFamily::iPhone17 => "iPhone18,3",
+            DeviceFamily::iPhone17Pro => "iPhone18,1",
+            DeviceFamily::iPhone17ProMax => "iPhone18,2",
             DeviceFamily::iPad => "iPad1,1",
             DeviceFamily::iPad2 => "iPad2,1",
             DeviceFamily::iPad3 => "iPad3,1",
@@ -351,6 +423,22 @@ impl DeviceFamily {
             | DeviceFamily::iPhone12ProMax
             | DeviceFamily::iPhone13Pro
             | DeviceFamily::iPhone13ProMax => 1024 * MIB,
+            DeviceFamily::iPhone14
+            | DeviceFamily::iPhone14Plus
+            | DeviceFamily::iPhone14Pro
+            | DeviceFamily::iPhone14ProMax
+            | DeviceFamily::iPhone15
+            | DeviceFamily::iPhone15Plus
+            | DeviceFamily::iPhone15Pro
+            | DeviceFamily::iPhone15ProMax
+            | DeviceFamily::iPhone16
+            | DeviceFamily::iPhone16Plus
+            | DeviceFamily::iPhone16Pro
+            | DeviceFamily::iPhone16ProMax
+            | DeviceFamily::iPhone16e
+            | DeviceFamily::iPhone17
+            | DeviceFamily::iPhone17Pro
+            | DeviceFamily::iPhone17ProMax => 4096 * MIB,
         }
     }
 
@@ -421,6 +509,22 @@ impl DeviceFamily {
             DeviceFamily::iPhone13 => "iphone-13",
             DeviceFamily::iPhone13Pro => "iphone-13-pro",
             DeviceFamily::iPhone13ProMax => "iphone-13-pro-max",
+            DeviceFamily::iPhone14 => "iphone-14",
+            DeviceFamily::iPhone14Plus => "iphone-14-plus",
+            DeviceFamily::iPhone14Pro => "iphone-14-pro",
+            DeviceFamily::iPhone14ProMax => "iphone-14-pro-max",
+            DeviceFamily::iPhone15 => "iphone-15",
+            DeviceFamily::iPhone15Plus => "iphone-15-plus",
+            DeviceFamily::iPhone15Pro => "iphone-15-pro",
+            DeviceFamily::iPhone15ProMax => "iphone-15-pro-max",
+            DeviceFamily::iPhone16 => "iphone-16",
+            DeviceFamily::iPhone16Plus => "iphone-16-plus",
+            DeviceFamily::iPhone16Pro => "iphone-16-pro",
+            DeviceFamily::iPhone16ProMax => "iphone-16-pro-max",
+            DeviceFamily::iPhone16e => "iphone-16e",
+            DeviceFamily::iPhone17 => "iphone-17",
+            DeviceFamily::iPhone17Pro => "iphone-17-pro",
+            DeviceFamily::iPhone17ProMax => "iphone-17-pro-max",
             DeviceFamily::iPad => "ipad-1",
             DeviceFamily::iPad2 => "ipad-2",
             DeviceFamily::iPad3 => "ipad-3",
@@ -470,6 +574,22 @@ impl DeviceFamily {
         DeviceFamily::iPhone13,
         DeviceFamily::iPhone13Pro,
         DeviceFamily::iPhone13ProMax,
+        DeviceFamily::iPhone14,
+        DeviceFamily::iPhone14Plus,
+        DeviceFamily::iPhone14Pro,
+        DeviceFamily::iPhone14ProMax,
+        DeviceFamily::iPhone15,
+        DeviceFamily::iPhone15Plus,
+        DeviceFamily::iPhone15Pro,
+        DeviceFamily::iPhone15ProMax,
+        DeviceFamily::iPhone16,
+        DeviceFamily::iPhone16Plus,
+        DeviceFamily::iPhone16Pro,
+        DeviceFamily::iPhone16ProMax,
+        DeviceFamily::iPhone16e,
+        DeviceFamily::iPhone17,
+        DeviceFamily::iPhone17Pro,
+        DeviceFamily::iPhone17ProMax,
         DeviceFamily::iPad,
         DeviceFamily::iPad2,
         DeviceFamily::iPad3,
@@ -530,6 +650,22 @@ impl TryFrom<&str> for DeviceFamily {
             "iphone-13" | "iphone14,5" => Ok(DeviceFamily::iPhone13),
             "iphone-13-pro" | "iphone14,2" => Ok(DeviceFamily::iPhone13Pro),
             "iphone-13-pro-max" | "iphone14,3" => Ok(DeviceFamily::iPhone13ProMax),
+            "iphone-14" | "iphone14,7" => Ok(DeviceFamily::iPhone14),
+            "iphone-14-plus" | "iphone14,8" => Ok(DeviceFamily::iPhone14Plus),
+            "iphone-14-pro" | "iphone15,2" => Ok(DeviceFamily::iPhone14Pro),
+            "iphone-14-pro-max" | "iphone15,3" => Ok(DeviceFamily::iPhone14ProMax),
+            "iphone-15" | "iphone15,4" => Ok(DeviceFamily::iPhone15),
+            "iphone-15-plus" | "iphone15,5" => Ok(DeviceFamily::iPhone15Plus),
+            "iphone-15-pro" | "iphone16,1" => Ok(DeviceFamily::iPhone15Pro),
+            "iphone-15-pro-max" | "iphone16,2" => Ok(DeviceFamily::iPhone15ProMax),
+            "iphone-16" | "iphone17,3" => Ok(DeviceFamily::iPhone16),
+            "iphone-16-plus" | "iphone17,4" => Ok(DeviceFamily::iPhone16Plus),
+            "iphone-16-pro" | "iphone17,1" => Ok(DeviceFamily::iPhone16Pro),
+            "iphone-16-pro-max" | "iphone17,2" => Ok(DeviceFamily::iPhone16ProMax),
+            "iphone-16e" | "iphone17,5" => Ok(DeviceFamily::iPhone16e),
+            "iphone-17" | "iphone18,3" => Ok(DeviceFamily::iPhone17),
+            "iphone-17-pro" | "iphone18,1" => Ok(DeviceFamily::iPhone17Pro),
+            "iphone-17-pro-max" | "iphone18,2" => Ok(DeviceFamily::iPhone17ProMax),
             "ipad" => Ok(DeviceFamily::iPad2),
             "ipad-1" | "ipad1,1" => Ok(DeviceFamily::iPad),
             "ipad-2" | "ipad2,1" => Ok(DeviceFamily::iPad2),

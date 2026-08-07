@@ -75,6 +75,13 @@ pub fn set_onscreen_fps_enabled(enabled: bool) {
     ONSCREEN_FPS_ENABLED.get_or_init(|| AtomicBool::new(false)).store(enabled, Ordering::SeqCst);
 }
 
+pub fn centered_texture_rotation(rotation_matrix: Matrix<2>) -> Matrix<4> {
+    let r = Matrix::<4>::from(&rotation_matrix);
+    let to_center = Matrix::<4>::translate_3d(-0.5, -0.5, 0.0);
+    let from_center = Matrix::<4>::translate_3d(0.5, 0.5, 0.0);
+    to_center.multiply(&r).multiply(&from_center)
+}
+
 /// Present the the latest frame (e.g. the app's splash screen or rendering
 /// output), provided as a texture bound to `GL_TEXTURE_2D`, by drawing it on
 /// the window. It may be rotated, scaled and/or letterboxed as necessary. The
@@ -144,14 +151,7 @@ pub unsafe fn present_frame(
     // frame. Pre- and post-translating by (0.5, 0.5) keeps tex coords in
     // [0, 1]² for any 90°/180°/270°/identity device rotation while
     // producing the same visual output as before on lenient drivers.
-    let r = Matrix::<4>::from(&rotation_matrix);
-    let to_center = Matrix::<4>::translate_3d(-0.5, -0.5, 0.0);
-    let from_center = Matrix::<4>::translate_3d(0.5, 0.5, 0.0);
-    // Note: Matrix::multiply(&other) computes `other · self` in
-    // linear-algebra terms (other is applied AFTER self), so to get
-    // `from_center · r · to_center` we chain in the order
-    // to_center.multiply(&r).multiply(&from_center).
-    let centered_rotation = to_center.multiply(&r).multiply(&from_center);
+    let centered_rotation = centered_texture_rotation(rotation_matrix);
     gles.MatrixMode(gles11::TEXTURE);
     gles.LoadMatrixf(centered_rotation.columns().as_ptr() as *const _);
     gles.Enable(gles11::TEXTURE_2D);

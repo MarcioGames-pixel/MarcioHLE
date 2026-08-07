@@ -1155,7 +1155,7 @@ unsafe fn present_renderbuffer_es2(
     };
     gles.UseProgram(program.program);
     gles.Uniform1i(program.u_tex, 0);
-    let m = crate::matrix::Matrix::<4>::from(&rotation_matrix);
+    let m = crate::gles::present::centered_texture_rotation(rotation_matrix);
     let cols = m.columns();
     gles.UniformMatrix4fv(
         program.u_tex_mat,
@@ -1499,7 +1499,7 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
                 device_orientation,
                 crate::window::DeviceOrientation::Portrait
             );
-    let rotation_matrix = if std::env::var_os("TOUCHHLE_DISABLE_PRESENT_ROTATION").is_some() {
+    let mut rotation_matrix = if std::env::var_os("TOUCHHLE_DISABLE_PRESENT_ROTATION").is_some() {
         log_once!(
             "TOUCHHLE_DISABLE_PRESENT_ROTATION=1: presenting EAGL renderbuffer without texture rotation"
         );
@@ -1513,6 +1513,15 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
     } else {
         env.window.as_mut().unwrap().rotation_matrix()
     };
+    if std::env::var_os("TOUCHHLE_TRANSLATOR_DISABLE_ROTATION").is_some() {
+        log_once_fmt!(
+            "TOUCHHLE_TRANSLATOR_DISABLE_ROTATION=1: disabling EAGL present rotation for translator diagnostics (bundle={}, family={}, orientation={:?})",
+            env.bundle.bundle_identifier(),
+            device_family,
+            device_orientation
+        );
+        rotation_matrix = crate::matrix::Matrix::<2>::identity();
+    }
     let virtual_cursor_visible_at = env.window.as_mut().unwrap().virtual_cursor_visible_at();
 
     let Some(gles_ctx) = super::get_thread_context(
