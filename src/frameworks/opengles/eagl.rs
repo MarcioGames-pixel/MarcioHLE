@@ -677,8 +677,8 @@ pub const CLASSES: ClassExports = objc_classes! {
             maybe_gles.is_some_and(|gles| gles.is_native_es1())
         };
         if native_es1 {
-            log!(
-                "Layer {:?} uses native ES1; presenting renderbuffer {:?} through resolved RAM readback to avoid empty tile-buffer copies.",
+            log_once_fmt!(
+                "Layer {:?} uses native ES1; presenting renderbuffer {:?} through resolved RAM readback.",
                 drawable,
                 renderbuffer,
             );

@@ -240,23 +240,33 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
     let graphics_backend = match options.graphics_api {
         crate::options::GraphicsApi::Metal => A64GraphicsBackend::MetalCompatibility,
         crate::options::GraphicsApi::Default if uses_metal => A64GraphicsBackend::MetalCompatibility,
-        _ => A64GraphicsBackend::OpenGLESCompatibility,
+        crate::options::GraphicsApi::GLES10
+        | crate::options::GraphicsApi::GLES11
+        | crate::options::GraphicsApi::GLES20
+        | crate::options::GraphicsApi::GLES30
+        | crate::options::GraphicsApi::Translator => A64GraphicsBackend::OpenGLESCompatibility,
+        crate::options::GraphicsApi::Default => A64GraphicsBackend::OpenGLESCompatibility,
     };
     let mut runtime_state = RuntimeState::new(ios_version, graphics_backend);
     runtime_state.current_module = Some(executable.name.clone());
     let mut window = if options.headless {
         None
     } else {
+        let mut window_options = options.clone();
+        if graphics_backend == A64GraphicsBackend::MetalCompatibility {
+            window_options.graphics_api = crate::options::GraphicsApi::GLES20;
+            window_options.prefer_gles2_context = true;
+            log!("ARM64 Metal compatibility: using a host GLES2 display surface for the Metal presenter");
+        }
         Some(Box::new(crate::window::Window::new(
             "RadekHLE ARM64",
             None,
             None,
-            &options,
+            &window_options,
         )))
     };
-    echo!("ARM64 graphics runtime: Metal calls are routed to the compatibility presenter; the existing EAGL/OpenGL ES surface is used for display");
     echo!(
-        "ARM64 graphics backend selected: {} (Metal calls use the compatibility layer; the SDL presentation surface remains OpenGL ES)",
+        "ARM64 graphics backend selected: {} (Metal is a guest compatibility API; the host presenter remains GLES because SDL creates the display surface)",
         graphics_backend.label()
     );
     log_dbg!(

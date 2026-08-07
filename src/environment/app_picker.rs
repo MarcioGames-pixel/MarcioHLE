@@ -618,7 +618,7 @@ fn app_picker_inner(
         () = msg![env; main_view addSubview:label];
     }
 
-    let divider = app_frame.size.height - 100.0 * ui_scale;
+    let divider = app_frame.size.height - 220.0 * ui_scale;
 
     let mut icon_grid_stuff = match &mut apps {
         Ok(ref mut apps) => {
@@ -656,8 +656,8 @@ fn app_picker_inner(
         }
     };
 
-    let buttons_row_center = divider + (app_frame.size.height - divider) / 4.0;
-    let buttons_row2_center = divider + (app_frame.size.height - divider) / 1.6;
+    let buttons_row_center = divider + 48.0 * ui_scale;
+    let buttons_row2_center = divider + 122.0 * ui_scale;
     make_app_launcher_grid(
         env,
         delegate,
@@ -1170,8 +1170,8 @@ fn make_icon_grid(
     let num_cols_f = num_cols as CGFloat;
     let num_rows = 4;
     let label_size = CGSize {
-        width: icon_size.width + 12.0 * ui_scale,
-        height: 14.0 * ui_scale,
+        width: icon_size.width + 16.0 * ui_scale,
+        height: 28.0 * ui_scale,
     };
     let icon_gap_x: CGFloat = (short_side * 0.028).clamp(8.0, 22.0);
     let icon_gap_y: CGFloat = (short_side * 0.012).clamp(4.0, 12.0) + label_size.height;
@@ -1232,6 +1232,9 @@ fn make_icon_grid(
         let font_size: CGFloat = (11.0 * ui_scale).max(8.0);
         let font: id = picker_font(env, font_size);
         () = msg![env; label setFont:font];
+        () = msg![env; label setNumberOfLines:2];
+        () = msg![env; label setAdjustsFontSizeToFitWidth:true];
+        () = msg![env; label setMinimumFontSize:8.0];
         let text_color: id = if have_wallpaper {
             msg_class![env; UIColor whiteColor]
         } else {
@@ -1460,6 +1463,8 @@ fn make_app_launcher_grid(
         let image = cg_image::from_image(env, image);
         let image: id = msg_class![env; UIImage imageWithCGImage:image];
         () = msg![env; button setImage:image forState:UIControlStateNormal];
+        let clear: id = msg_class![env; UIColor clearColor];
+        () = msg![env; button setBackgroundColor:clear];
         let image_view: id = msg![env; button imageView];
         () = msg![env; image_view setContentMode:2];
         () = msg![env; image_view setFrame:(CGRect {
@@ -1491,8 +1496,11 @@ fn make_app_launcher_grid(
         () = msg![env; label setFont:font];
         () = msg![env; label setAdjustsFontSizeToFitWidth:true];
         () = msg![env; label setMinimumFontSize:8.0];
+        () = msg![env; label setNumberOfLines:1];
         let text_color: id = msg_class![env; UIColor whiteColor];
         () = msg![env; label setTextColor:text_color];
+        let clear: id = msg_class![env; UIColor clearColor];
+        () = msg![env; label setBackgroundColor:clear];
         () = msg![env; super_view addSubview:label];
     }
 }
@@ -1848,7 +1856,7 @@ fn setup_quick_options(
     () = msg![env; main_view setScrollEnabled:true];
     () = msg![env; main_view setShowsVerticalScrollIndicator:true];
     () = msg![env; main_view setAlwaysBounceVertical:true];
-    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.96 alpha:1.0];
+    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.90 alpha:1.0];
     () = msg![env; main_view setBackgroundColor:bg_color];
     // This main_view is hidden until the copyright info button is tapped.
     () = msg![env; main_view setHidden:true];
@@ -2032,7 +2040,7 @@ fn setup_quick_options(
                         y: row_center - (28.0 * ui_scale) / 2.0,
                     },
                     size: CGSize {
-                        width: main_frame.size.width * 0.42,
+                        width: main_frame.size.width * 0.36,
                         height: 28.0 * ui_scale,
                     },
                 };
@@ -2051,7 +2059,7 @@ fn setup_quick_options(
                 () = msg![env; main_view addSubview:label];
             }
             RowKind::Buttons(buttons) => {
-                button_rows.push(make_button_row(
+                let controls = make_button_row(
                     env,
                     delegate,
                     main_view,
@@ -2059,7 +2067,27 @@ fn setup_quick_options(
                     row_center,
                     buttons,
                     /* font_size: */ Some(10.0),
-                ));
+                );
+                let margin = 6.0 * ui_scale;
+                let controls_width = main_frame.size.width * 0.56;
+                let controls_x = main_frame.size.width * 0.42;
+                let button_width = (controls_width - margin * (controls.len() as CGFloat + 1.0))
+                    / controls.len() as CGFloat;
+                for (index, &button) in controls.iter().enumerate() {
+                    let button_frame = CGRect {
+                        origin: CGPoint {
+                            x: controls_x + margin + index as CGFloat * (button_width + margin),
+                            y: row_center - 15.0 * ui_scale,
+                        },
+                        size: CGSize {
+                            width: button_width,
+                            height: 30.0 * ui_scale,
+                        },
+                    };
+                    () = msg![env; button setFrame:button_frame];
+                    () = msg![env; button layoutSubviews];
+                }
+                button_rows.push(controls);
             }
             RowKind::IosVersionDropdown => {
                 let dropdown = make_ios_version_dropdown(
@@ -2149,11 +2177,12 @@ fn update_device_model_menu(
     let list_width = thumb_frame.origin.x;
     let scrollbar_width = thumb_frame.size.width;
     let thumb_height = thumb_frame.size.height;
-    let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * DEVICE_MENU_ITEM_HEIGHT;
+    let row_height = DEVICE_MENU_ITEM_HEIGHT * (thumb_frame.size.width / 22.0).max(1.0);
+    let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * row_height;
     let max_scroll = (items.len() as isize).saturating_sub(DEVICE_MENU_VISIBLE_ITEMS as isize);
 
     for (j, &item) in items.iter().enumerate() {
-        let y_pos = ((j as isize - scroll) as CGFloat) * DEVICE_MENU_ITEM_HEIGHT;
+        let y_pos = ((j as isize - scroll) as CGFloat) * row_height;
         let is_visible = y_pos >= 0.0 && y_pos < visible_menu_height;
         () = msg![env; item setHidden:(!is_visible)];
         if is_visible {
@@ -2161,7 +2190,7 @@ fn update_device_model_menu(
                 origin: CGPoint { x: 0.0, y: y_pos },
                 size: CGSize {
                     width: list_width,
-                    height: DEVICE_MENU_ITEM_HEIGHT,
+                    height: row_height,
                 },
             };
             () = msg![env; item setFrame:item_frame];
@@ -2226,9 +2255,9 @@ fn update_graphics_api_dropdown(env: &mut Environment, button: id, items: &[id],
 
 fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: id, super_view_size: CGSize, row_center: CGFloat) -> (id, id, Vec<id>) {
     let ui_scale = picker_ui_scale(super_view_size);
-    let width = (super_view_size.width * 0.62).clamp(240.0, 720.0);
+    let width = (super_view_size.width * 0.56).clamp(170.0, 720.0);
     let height = 30.0 * ui_scale;
-    let frame = CGRect { origin: CGPoint { x: super_view_size.width / 2.0 - width / 2.0, y: row_center - height / 2.0 }, size: CGSize { width, height } };
+    let frame = CGRect { origin: CGPoint { x: super_view_size.width * 0.42, y: row_center - height / 2.0 }, size: CGSize { width, height } };
     let button: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
     let title = ns_string::get_static_str(env, "Default (game)");
     () = msg![env; button setTitle:title forState:UIControlStateNormal];
@@ -2236,6 +2265,8 @@ fn make_graphics_api_dropdown(env: &mut Environment, delegate: id, super_view: i
     let button_label: id = msg![env; button titleLabel];
     let button_font = picker_font(env, 13.0 * ui_scale);
     () = msg![env; button_label setFont:button_font];
+    () = msg![env; button_label setAdjustsFontSizeToFitWidth:true];
+    () = msg![env; button_label setMinimumFontSize:8.0];
     let white: id = msg_class![env; UIColor whiteColor];
     let gray: id = msg_class![env; UIColor darkGrayColor];
     () = msg![env; button setTitleColor:white forState:UIControlStateNormal];
@@ -2281,12 +2312,12 @@ fn make_ios_version_dropdown(
     row_center: CGFloat,
 ) -> (id, id, Vec<id>) {
     let ui_scale = picker_ui_scale(super_view_size);
-    let button_width: CGFloat = (super_view_size.width * 0.62).clamp(240.0, 720.0);
+    let button_width: CGFloat = (super_view_size.width * 0.56).clamp(170.0, 720.0);
     let button_height: CGFloat = 30.0 * ui_scale;
     let item_height: CGFloat = 30.0 * ui_scale;
     let button_frame = CGRect {
         origin: CGPoint {
-            x: super_view_size.width / 2.0 - button_width / 2.0,
+            x: super_view_size.width * 0.42,
             y: row_center - button_height / 2.0,
         },
         size: CGSize { width: button_width, height: button_height },
@@ -2366,14 +2397,14 @@ fn make_device_model_dropdown(
     row_center: CGFloat,
 ) -> (id, id, Vec<id>, id) {
     let ui_scale = picker_ui_scale(super_view_size);
-    let btn_width: CGFloat = (super_view_size.width * 0.62).clamp(240.0, 720.0);
+    let btn_width: CGFloat = (super_view_size.width * 0.56).clamp(170.0, 720.0);
     let btn_height: CGFloat = 30.0 * ui_scale;
     let scrollbar_width: CGFloat = 22.0 * ui_scale;
     let list_width: CGFloat = btn_width - scrollbar_width;
 
     let btn_frame = CGRect {
         origin: CGPoint {
-            x: super_view_size.width / 2.0 - btn_width / 2.0,
+            x: super_view_size.width * 0.42,
             y: row_center - btn_height / 2.0,
         },
         size: CGSize {
@@ -2420,7 +2451,8 @@ fn make_device_model_dropdown(
 
     // The dropdown menu, placed directly above the toggle button. It is clipped
     // to its own bounds and hidden until the button is tapped.
-    let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * DEVICE_MENU_ITEM_HEIGHT * ui_scale;
+    let row_height = DEVICE_MENU_ITEM_HEIGHT * ui_scale;
+    let visible_menu_height = (DEVICE_MENU_VISIBLE_ITEMS as CGFloat) * row_height;
     let menu_frame = CGRect {
         origin: CGPoint {
             x: btn_frame.origin.x,
@@ -2446,12 +2478,12 @@ fn make_device_model_dropdown(
     let white: id = msg_class![env; UIColor whiteColor];
     let mut items: Vec<id> = Vec::new();
     for (j, (title, tag)) in entries.into_iter().enumerate() {
-        let y_pos = (j as CGFloat) * DEVICE_MENU_ITEM_HEIGHT;
+        let y_pos = (j as CGFloat) * row_height;
         let item_frame = CGRect {
             origin: CGPoint { x: 0.0, y: y_pos },
             size: CGSize {
                 width: list_width,
-                height: DEVICE_MENU_ITEM_HEIGHT,
+                height: row_height,
             },
         };
         let item_btn: id = msg_class![env; UIButton buttonWithType:UIButtonTypeCustom];
@@ -2461,6 +2493,8 @@ fn make_device_model_dropdown(
         let item_label: id = msg![env; item_btn titleLabel];
         let item_font = picker_font(env, 12.0 * ui_scale);
         () = msg![env; item_label setFont:item_font];
+        () = msg![env; item_label setAdjustsFontSizeToFitWidth:true];
+        () = msg![env; item_label setMinimumFontSize:8.0];
         () = msg![env; item_btn setTitleColor:white forState:UIControlStateNormal];
         () = msg![env; item_btn setFrame:item_frame];
         () = msg![env; item_btn layoutSubviews];
