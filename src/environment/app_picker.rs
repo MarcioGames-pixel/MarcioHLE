@@ -18,7 +18,7 @@ use crate::frameworks::foundation::ns_run_loop::run_run_loop_single_iteration;
 use crate::frameworks::foundation::ns_string;
 use crate::frameworks::foundation::NSInteger;
 use crate::frameworks::uikit::ui_font::{
-    UITextAlignmentCenter, UITextAlignmentRight,
+    UITextAlignmentCenter, UITextAlignmentLeft, UITextAlignmentRight,
 };
 use crate::frameworks::uikit::ui_graphics::{UIGraphicsPopContext, UIGraphicsPushContext};
 use crate::frameworks::uikit::ui_view::ui_control::ui_button::{
@@ -1147,7 +1147,11 @@ fn picker_font(env: &mut Environment, size: CGFloat) -> id {
     let name = ns_string::get_static_str(env, "HelveticaNeue");
     let font: id = msg_class![env; UIFont fontWithName:name size:size];
     release(env, name);
-    font
+    if font == nil {
+        msg_class![env; UIFont systemFontOfSize:size]
+    } else {
+        font
+    }
 }
 
 enum TappedIcon {
@@ -1765,8 +1769,10 @@ fn setup_quick_options(
     let main_view: id = msg![env; main_view initWithFrame:visible_frame];
     let content_size = main_frame.size;
     () = msg![env; main_view setContentSize:content_size];
+    () = msg![env; main_view setScrollEnabled:true];
     () = msg![env; main_view setShowsVerticalScrollIndicator:true];
-    let bg_color: id = msg_class![env; UIColor whiteColor];
+    () = msg![env; main_view setAlwaysBounceVertical:true];
+    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.96 alpha:1.0];
     () = msg![env; main_view setBackgroundColor:bg_color];
     // This main_view is hidden until the copyright info button is tapped.
     () = msg![env; main_view setHidden:true];
@@ -1774,6 +1780,48 @@ fn setup_quick_options(
 
     let ui_scale = picker_ui_scale(app_frame.size);
     let divider = 42.0 * ui_scale;
+
+    let header_frame = CGRect {
+        origin: CGPoint {
+            x: 22.0 * ui_scale,
+            y: 12.0 * ui_scale,
+        },
+        size: CGSize {
+            width: main_frame.size.width - 44.0 * ui_scale,
+            height: 30.0 * ui_scale,
+        },
+    };
+    let header: id = msg_class![env; UILabel alloc];
+    let header: id = msg![env; header initWithFrame:header_frame];
+    let header_text = ns_string::get_static_str(env, "Settings");
+    () = msg![env; header setText:header_text];
+    () = msg![env; header setTextAlignment:UITextAlignmentLeft];
+    let header_font = picker_font(env, 21.0 * ui_scale);
+    () = msg![env; header setFont:header_font];
+    let black: id = msg_class![env; UIColor blackColor];
+    () = msg![env; header setTextColor:black];
+    () = msg![env; main_view addSubview:header];
+
+    let subtitle_frame = CGRect {
+        origin: CGPoint {
+            x: 22.0 * ui_scale,
+            y: 42.0 * ui_scale,
+        },
+        size: CGSize {
+            width: main_frame.size.width - 44.0 * ui_scale,
+            height: 20.0 * ui_scale,
+        },
+    };
+    let subtitle: id = msg_class![env; UILabel alloc];
+    let subtitle: id = msg![env; subtitle initWithFrame:subtitle_frame];
+    let subtitle_text = ns_string::get_static_str(env, "Scroll for more options");
+    () = msg![env; subtitle setText:subtitle_text];
+    () = msg![env; subtitle setTextAlignment:UITextAlignmentLeft];
+    let subtitle_font = picker_font(env, 11.0 * ui_scale);
+    () = msg![env; subtitle setFont:subtitle_font];
+    let muted: id = msg_class![env; UIColor darkGrayColor];
+    () = msg![env; subtitle setTextColor:muted];
+    () = msg![env; main_view addSubview:subtitle];
 
     // Close button (×) in the upper right corner. It uses an explicit border
     // and a slightly larger frame than the title so the glyph is clearly
@@ -1904,11 +1952,11 @@ fn setup_quick_options(
             RowKind::Label(text) => {
                 let frame = CGRect {
                     origin: CGPoint {
-                        x: 0.0,
+                        x: 22.0 * ui_scale,
                         y: row_center - (28.0 * ui_scale) / 2.0,
                     },
                     size: CGSize {
-                        width: main_frame.size.width,
+                        width: main_frame.size.width * 0.42,
                         height: 28.0 * ui_scale,
                     },
                 };
@@ -1917,7 +1965,7 @@ fn setup_quick_options(
                 let label: id = msg![env; label initWithFrame:frame];
                 let text = ns_string::get_static_str(env, text);
                 () = msg![env; label setText:text];
-                () = msg![env; label setTextAlignment:UITextAlignmentCenter];
+                () = msg![env; label setTextAlignment:UITextAlignmentLeft];
                 let label_font = picker_font(env, 14.0 * ui_scale);
                 () = msg![env; label setFont:label_font];
                 let black: id = msg_class![env; UIColor blackColor];
@@ -1971,10 +2019,13 @@ fn setup_quick_options(
             RowKind::Switch(selector, default_state) => {
                 let switch_frame = CGRect {
                     origin: CGPoint {
-                        x: main_frame.size.width / 2.0 - (94.0 * ui_scale) / 2.0,
-                        y: row_center - (22.0 * ui_scale) / 2.0,
+                        x: main_frame.size.width * 0.70,
+                        y: row_center - (30.0 * ui_scale) / 2.0,
                     },
-                    size: Default::default(),
+                    size: CGSize {
+                        width: 94.0 * ui_scale,
+                        height: 30.0 * ui_scale,
+                    },
                 };
 
                 let switch: id = msg_class![env; UISwitch alloc];

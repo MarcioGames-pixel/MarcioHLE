@@ -831,10 +831,29 @@ impl Window {
         sdl2::hint::set("SDL_JOYSTICK_HIDAPI", "0");
 
         if env::consts::OS == "android" {
-            // It's important to set context version BEFORE window creation
-            // ref. https://wiki.libsdl.org/SDL2/SDL_GLattr
+            // SDL needs the host context profile before creating the window.
+            // A GLES1 window cannot later create the GLES2 context required by
+            // the fixed-function translator on Android.
             let attr = video_ctx.gl_attr();
-            attr.set_context_version(1, 1);
+            let use_gles2 = matches!(
+                options.graphics_api,
+                crate::options::GraphicsApi::Translator
+                    | crate::options::GraphicsApi::GLES20
+                    | crate::options::GraphicsApi::GLES30
+            ) || (matches!(
+                options.graphics_api,
+                crate::options::GraphicsApi::Default | crate::options::GraphicsApi::Metal
+            ) && (options.prefer_gles2_context || options.angle_driver));
+            if use_gles2 {
+                let version = if matches!(options.graphics_api, crate::options::GraphicsApi::GLES30) {
+                    (3, 0)
+                } else {
+                    (2, 0)
+                };
+                attr.set_context_version(version.0, version.1);
+            } else {
+                attr.set_context_version(1, 1);
+            }
             attr.set_context_profile(sdl2::video::GLProfile::GLES);
 
             // Disable blocking of event loop when app is paused.
@@ -897,10 +916,9 @@ impl Window {
         };
 
         if env::consts::OS == "android" {
-            // Sanity check
             let gl_attr = video_ctx.gl_attr();
             debug_assert_eq!(gl_attr.context_profile(), sdl2::video::GLProfile::GLES);
-            debug_assert_eq!(gl_attr.context_version(), (1, 1));
+            log!("Android SDL requested GLES context {}.{}", gl_attr.context_version().0, gl_attr.context_version().1);
         }
 
         if let Some(icon) = icon {

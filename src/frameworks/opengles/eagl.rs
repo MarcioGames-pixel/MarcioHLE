@@ -82,8 +82,11 @@ fn effective_eagl_api(
     graphics_api: GraphicsApi,
 ) -> EAGLRenderingAPI {
     match graphics_api {
-        GraphicsApi::GLES10 | GraphicsApi::GLES11 | GraphicsApi::Translator => {
+        GraphicsApi::GLES10 | GraphicsApi::GLES11 => {
             kEAGLRenderingAPIOpenGLES1
+        }
+        GraphicsApi::Translator => {
+            kEAGLRenderingAPIOpenGLES2
         }
         GraphicsApi::GLES20 => kEAGLRenderingAPIOpenGLES2,
         GraphicsApi::GLES30 => kEAGLRenderingAPIOpenGLES3,
