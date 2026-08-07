@@ -2734,7 +2734,7 @@ fn glUnmapBufferOES(env: &mut Environment, target: GLenum) -> GLboolean {
     };
     let mapping = env
         .objc
-        .borrow_mut::<EAGLContextHostObject>(current_ctx)
+        .borrow_mut::<EAGLContextHostObject>(*current_ctx)
         .mapped_buffers
         .remove(&buffer_object_name);
     let Some((guest_buffer, host_buffer)) = mapping else {
