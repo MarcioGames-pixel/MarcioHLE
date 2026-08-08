@@ -499,6 +499,9 @@ fn app_picker_inner(
     );
     let main_view: id = msg_class![env; UIView alloc];
     let main_view: id = msg![env; main_view initWithFrame:app_frame];
+    let picker_background: id = msg_class![env; UIColor colorWithWhite:0.94 alpha:1.0];
+    () = msg![env; main_view setBackgroundColor:picker_background];
+    () = msg![env; window setBackgroundColor:picker_background];
     () = msg![env; window addSubview:main_view];
 
     // Wallpaper
