@@ -671,19 +671,28 @@ pub const CLASSES: ClassExports = objc_classes! {
     // We're presenting to the opaque CAEAGLLayer that covers the screen.
     // We can use the fast path where we skip composition and present directly.
     if drawable == fullscreen_layer {
-        let native_es1 = {
+        let presentation_mode = {
             let maybe_gles = super::sync_context(
                 &mut env.framework_state.opengles,
                 &mut env.objc,
                 env.window.as_mut().unwrap(),
                 env.current_thread,
             );
-            maybe_gles.is_some_and(|gles| gles.is_native_es1())
+            maybe_gles.map(|gles| {
+                if gles.is_native_es1() {
+                    "native-es1-readback"
+                } else if gles.is_translator() {
+                    "translator-readback"
+                } else {
+                    "shader-direct"
+                }
+            })
         };
-        if native_es1 {
+        if matches!(presentation_mode, Some("native-es1-readback" | "translator-readback")) {
             log_once_fmt!(
-                "Layer {:?} uses native ES1; presenting renderbuffer {:?} through resolved RAM readback.",
+                "Layer {:?} uses {}; presenting renderbuffer {:?} through resolved RAM readback to preserve tile contents and alpha.",
                 drawable,
+                presentation_mode.unwrap_or("unknown"),
                 renderbuffer,
             );
             unsafe {
