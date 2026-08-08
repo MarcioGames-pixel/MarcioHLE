@@ -350,7 +350,14 @@ pub const CLASSES: ClassExports = objc_classes! {
     if target != nil {
         let responds: bool = msg![env; target respondsToSelector:action];
         if responds {
-            () = msg![env; target performSelector:action withObject:sender];
+            let sel_str = action.as_str(&env.mem);
+            let colon_count = sel_str.bytes().filter(|&b| b == b':').count();
+            match colon_count {
+                0 => () = crate::objc::msg_send(env, (target, action)),
+                1 => () = crate::objc::msg_send(env, (target, action, sender)),
+                2 => () = crate::objc::msg_send(env, (target, action, sender, _event)),
+                _ => return false,
+            }
             return true;
         }
         return false;
