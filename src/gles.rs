@@ -81,6 +81,7 @@ pub use touchHLE_gl_bindings::gles2 as gles2_raw;
 pub use touchHLE_gl_bindings::gles30 as gles30_raw;
 
 use crate::environment::Environment;
+use crate::window::GLVersion;
 use gles1_native::GLES1NativeContext;
 use gles1_on_gl2::GLES1OnGL2Context;
 use gles1_on_gles2::GLES1OnGLES2Context;
@@ -189,6 +190,23 @@ pub fn create_gles1_translator_ctx_no_parent_stack(
             .expect("Couldn't create OpenGL ES 1.1-on-GLES2 translator context!"),
     )
 }
+pub fn create_gles1_gles3_translator_ctx_no_parent_stack(
+    window: &mut crate::window::Window,
+) -> Box<dyn GLESContext> {
+    assert!(window.on_main_stack());
+    log!("Creating the OpenGL ES 1.1 to native OpenGL ES 3.0 translator");
+    Box::new(
+        GLES1OnGLES2Context::new_with_gl_version(window, GLVersion::GLES30)
+            .expect("Couldn't create OpenGL ES 1.1-on-GLES3 translator context!"),
+    )
+}
+
+pub fn create_gles1_gles3_translator_ctx(env: &mut Environment) -> Box<dyn GLESContext> {
+    env.on_parent_stack_in_coroutine(|window, _options| {
+        create_gles1_gles3_translator_ctx_no_parent_stack(window)
+    })
+}
+
 pub fn create_gles1_translator_ctx(env: &mut Environment) -> Box<dyn GLESContext> {
     env.on_parent_stack_in_coroutine(|window, _options| {
         create_gles1_translator_ctx_no_parent_stack(window)

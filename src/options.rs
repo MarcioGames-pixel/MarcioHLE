@@ -38,6 +38,7 @@ pub const LATEST_IOS_VERSION: (i32, i32, i32) = (12, 4, 1);
 pub enum GraphicsApi {
     Default,
     Translator,
+    TranslatorGLES30,
     GLES10,
     GLES11,
     GLES20,
@@ -55,7 +56,8 @@ impl GraphicsApi {
     pub fn from_short_name(name: &str) -> Result<Self, ()> {
         match name {
             "default" | "auto" => Ok(Self::Default),
-            "translator" => Ok(Self::Translator),
+            "translator" | "gles1.1-gles2.0" => Ok(Self::Translator),
+            "translator-gles3" | "gles1.1-gles3.0" => Ok(Self::TranslatorGLES30),
             "gles1.0" | "gles10" => Ok(Self::GLES10),
             "gles1.1" | "gles11" => Ok(Self::GLES11),
             "gles2.0" | "gles20" => Ok(Self::GLES20),
@@ -69,6 +71,7 @@ impl GraphicsApi {
         match self {
             Self::Default => "Default (game)",
             Self::Translator => "OpenGL ES 1.1 → OpenGL ES 2.0 translator",
+            Self::TranslatorGLES30 => "OpenGL ES 1.1 → OpenGL ES 3.0 translator",
             Self::GLES10 => "OpenGL ES 1.0",
             Self::GLES11 => "OpenGL ES 1.1",
             Self::GLES20 => "OpenGL ES 2.0",

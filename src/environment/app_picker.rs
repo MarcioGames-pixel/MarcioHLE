@@ -364,11 +364,12 @@ const CLASSES: ClassExports = objc_classes! {
     let api = match tag as i32 {
         0 => crate::options::GraphicsApi::Default,
         1 => crate::options::GraphicsApi::Translator,
-        2 => crate::options::GraphicsApi::GLES10,
-        3 => crate::options::GraphicsApi::GLES11,
-        4 => crate::options::GraphicsApi::GLES20,
-        5 => crate::options::GraphicsApi::GLES30,
-        6 => crate::options::GraphicsApi::Metal,
+        2 => crate::options::GraphicsApi::TranslatorGLES30,
+        3 => crate::options::GraphicsApi::GLES10,
+        4 => crate::options::GraphicsApi::GLES11,
+        5 => crate::options::GraphicsApi::GLES20,
+        6 => crate::options::GraphicsApi::GLES30,
+        7 => crate::options::GraphicsApi::Metal,
         _ => crate::options::GraphicsApi::Default,
     };
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).graphics_api = Some(api);
@@ -1071,6 +1072,7 @@ fn app_picker_inner(
     if quick_options_graphics_api != crate::options::GraphicsApi::Default {
         let value = match quick_options_graphics_api {
             crate::options::GraphicsApi::Translator => "translator",
+            crate::options::GraphicsApi::TranslatorGLES30 => "translator-gles3",
             crate::options::GraphicsApi::GLES10 => "gles1.0",
             crate::options::GraphicsApi::GLES11 => "gles1.1",
             crate::options::GraphicsApi::GLES20 => "gles2.0",
@@ -2232,6 +2234,10 @@ const GRAPHICS_API_ENTRIES: &[(&str, crate::options::GraphicsApi)] = &[
     (
         "OpenGL ES 1.1 → OpenGL ES 2.0 translator",
         crate::options::GraphicsApi::Translator,
+    ),
+    (
+        "OpenGL ES 1.1 → OpenGL ES 3.0 translator",
+        crate::options::GraphicsApi::TranslatorGLES30,
     ),
     ("OpenGL ES 1.0", crate::options::GraphicsApi::GLES10),
     ("OpenGL ES 1.1", crate::options::GraphicsApi::GLES11),

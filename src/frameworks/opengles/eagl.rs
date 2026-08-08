@@ -17,7 +17,8 @@ use crate::gles::gles11_raw as gles11; // constants only
 use crate::gles::gles11_raw::types::*;
 use crate::gles::present::{present_frame, FpsCounter};
 use crate::gles::{
-    create_gles1_ctx, create_gles1_translator_ctx, create_gles2_ctx, create_gles3_ctx,
+    create_gles1_ctx, create_gles1_gles3_translator_ctx, create_gles1_translator_ctx,
+    create_gles2_ctx, create_gles3_ctx,
     gles1_on_gl2, GLESContext, GLES,
 };
 use crate::mem::MutPtr;
@@ -85,6 +86,7 @@ fn effective_eagl_api(
     match graphics_api {
         GraphicsApi::GLES10 | GraphicsApi::GLES11 => kEAGLRenderingAPIOpenGLES1,
         GraphicsApi::Translator => kEAGLRenderingAPIOpenGLES2,
+        GraphicsApi::TranslatorGLES30 => kEAGLRenderingAPIOpenGLES3,
         GraphicsApi::GLES20 => kEAGLRenderingAPIOpenGLES2,
         GraphicsApi::GLES30 => kEAGLRenderingAPIOpenGLES3,
         GraphicsApi::Metal | GraphicsApi::Default => {
@@ -197,6 +199,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let mut gles_ins = match (env.options.graphics_api, effective_api) {
         (GraphicsApi::Translator, _) => create_gles1_translator_ctx(env),
+        (GraphicsApi::TranslatorGLES30, _) => create_gles1_gles3_translator_ctx(env),
         (_, kEAGLRenderingAPIOpenGLES3) => create_gles3_ctx(env),
         (_, kEAGLRenderingAPIOpenGLES2) => create_gles2_ctx(env),
         _ => create_gles1_ctx(env),
@@ -238,6 +241,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let mut gles_ins = match (env.options.graphics_api, effective_api) {
         (GraphicsApi::Translator, _) => create_gles1_translator_ctx(env),
+        (GraphicsApi::TranslatorGLES30, _) => create_gles1_gles3_translator_ctx(env),
         (_, kEAGLRenderingAPIOpenGLES3) => create_gles3_ctx(env),
         (_, kEAGLRenderingAPIOpenGLES2) => create_gles2_ctx(env),
         _ => create_gles1_ctx(env),

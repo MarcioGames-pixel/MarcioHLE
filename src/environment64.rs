@@ -243,7 +243,8 @@ pub fn run(bundle: Bundle, fs: Fs, options: Options, app_args: Vec<String>) -> R
         | crate::options::GraphicsApi::GLES11
         | crate::options::GraphicsApi::GLES20
         | crate::options::GraphicsApi::GLES30
-        | crate::options::GraphicsApi::Translator => A64GraphicsBackend::OpenGLESCompatibility,
+        | crate::options::GraphicsApi::Translator
+        | crate::options::GraphicsApi::TranslatorGLES30 => A64GraphicsBackend::OpenGLESCompatibility,
         crate::options::GraphicsApi::Default | crate::options::GraphicsApi::Metal => {
             A64GraphicsBackend::MetalCompatibility
         }

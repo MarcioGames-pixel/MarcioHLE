@@ -14,8 +14,9 @@
 
 use crate::gles::present::present_frame;
 use crate::gles::{
-    create_gles1_ctx_no_parent_stack, create_gles1_translator_ctx_no_parent_stack,
-    create_gles2_ctx_no_parent_stack, GLESContext, GLES,
+    create_gles1_ctx_no_parent_stack, create_gles1_gles3_translator_ctx_no_parent_stack,
+    create_gles1_translator_ctx_no_parent_stack, create_gles2_ctx_no_parent_stack, GLESContext,
+    GLES,
 };
 use crate::image::Image;
 use crate::matrix::Matrix;
@@ -974,6 +975,7 @@ impl Window {
             let use_gles2 = matches!(
                 options.graphics_api,
                 crate::options::GraphicsApi::Translator
+                    | crate::options::GraphicsApi::TranslatorGLES30
                     | crate::options::GraphicsApi::GLES20
                     | crate::options::GraphicsApi::GLES30
             ) || (matches!(
@@ -981,7 +983,11 @@ impl Window {
                 crate::options::GraphicsApi::Default | crate::options::GraphicsApi::Metal
             ) && (options.prefer_gles2_context || options.angle_driver));
             if use_gles2 {
-                let version = if matches!(options.graphics_api, crate::options::GraphicsApi::GLES30) {
+                let version = if matches!(
+                    options.graphics_api,
+                    crate::options::GraphicsApi::GLES30
+                        | crate::options::GraphicsApi::TranslatorGLES30
+                ) {
                     (3, 0)
                 } else {
                     (2, 0)
@@ -1138,6 +1144,9 @@ impl Window {
         let mut gl_ins = match options.graphics_api {
             crate::options::GraphicsApi::Translator => {
                 create_gles1_translator_ctx_no_parent_stack(&mut window)
+            }
+            crate::options::GraphicsApi::TranslatorGLES30 => {
+                create_gles1_gles3_translator_ctx_no_parent_stack(&mut window)
             }
             crate::options::GraphicsApi::GLES20 | crate::options::GraphicsApi::GLES30 => {
                 create_gles2_ctx_no_parent_stack(&mut window)
