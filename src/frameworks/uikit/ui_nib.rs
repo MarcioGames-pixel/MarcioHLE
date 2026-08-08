@@ -371,7 +371,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let &UIRuntimeConnectionHostObject { destination, label, source } = env.objc.borrow(this);
     let &UIRuntimeEventConnectionHostObject { superclass: _, event_mask } = env.objc.borrow(this);
 
-    if source != nil && destination != nil && label != nil {
+    if source != nil && label != nil {
         let selector = to_rust_string(env, label).into_owned();
         // `lookup_selector` only finds selectors that the binary or some
         // already-loaded host class has registered. Storyboard-only

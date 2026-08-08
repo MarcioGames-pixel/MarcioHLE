@@ -1784,7 +1784,7 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
     if gles.is_es2() {
         if gles.is_translator() {
             std::mem::drop(gles_boxed);
-            present_renderbuffer_readback(env, drawable);
+            present_renderbuffer_readback(env, fullscreen_layer);
         } else {
             present_renderbuffer_es2(gles, viewport, rotation_matrix, virtual_cursor_visible_at);
             std::mem::drop(gles_boxed);
