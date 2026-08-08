@@ -251,12 +251,9 @@ pub const CLASSES: ClassExports = objc_classes! {
         release(env, this);
         msg![env; dummy init]
     } else if id == "IBFirstResponder" {
-        log!("touchHLE: Bypassing IBFirstResponder replacement with dummy NSObject");
-        let proxy_class = env.objc.get_known_class("NSObject", &mut env.mem);
-        let dummy: id = msg![env; proxy_class alloc];
-        let dummy_init: id = msg![env; dummy init];
+        log!("[NIB] Resolving IBFirstResponder as a responder-chain target");
         release(env, this);
-        dummy_init
+        nil
     } else {
         log!("TODO: UIProxyObject replacement for {}, instance {:?} left unreplaced", id, this);
         this

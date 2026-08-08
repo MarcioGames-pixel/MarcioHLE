@@ -18,7 +18,7 @@ pub mod ui_text_field;
 use crate::frameworks::core_graphics::CGPoint;
 use crate::frameworks::foundation::NSUInteger;
 use crate::objc::{
-    id, impl_HostObject_with_superclass, msg, msg_send, msg_super, nil, objc_classes, release,
+    id, impl_HostObject_with_superclass, msg, msg_class, msg_send, msg_super, nil, objc_classes, release,
     retain, ClassExports, NSZonePtr, SEL,
 };
 use crate::Environment;
@@ -87,9 +87,16 @@ fn send_actions(env: &mut Environment, this: id, event: id, control_event: UICon
     }
 
     for (target, action) in action_targets {
-        assert!(target != nil); // TODO
-
-        () = msg![env; this sendAction:action to:target forEvent:event];
+        if target == nil {
+            log_dbg!("UIControl {:?} resolving nil target action {:?} through responder chain", this, action);
+            let application: id = msg_class![env; UIApplication sharedApplication];
+            let handled: bool = msg![env; application sendAction:action to:nil from:this forEvent:event];
+            if !handled {
+                log!("Warning: UIControl {:?} could not resolve responder-chain action {:?}", this, action);
+            }
+        } else {
+            () = msg![env; this sendAction:action to:target forEvent:event];
+        }
     }
 }
 
@@ -273,22 +280,20 @@ pub const CLASSES: ClassExports = objc_classes! {
          action:(SEL)action
 forControlEvents:(UIControlEvents)events {
     if target == nil {
-        // TODO: when the target is nil, the responder chain is searched for
-        // a suitable target
-        log!(
-            "TODO: [{:?} addTarget:nil action:{:?} forControlEvents:{:?}] (ignored)",
-            target,
+        log_dbg!(
+            "[{0:?} addTarget:nil action:{1:?} forControlEvents:{2:?}] stored for responder-chain dispatch",
+            this,
             action,
             events,
         );
-        return;
     }
-    // The target is a *weak* reference!
 
-    // The selector must be for a method with zero to two arguments
     let sel_str = action.as_str(&env.mem);
     let colon_count = sel_str.bytes().filter(|&b| b == b':').count();
-    assert!([0, 1, 2].contains(&colon_count));
+    if ![0, 1, 2].contains(&colon_count) {
+        log!("Warning: [{:?} addTarget: action:{:?}] unsupported selector arity {}; ignoring", this, action, colon_count);
+        return;
+    }
 
     env.objc.borrow_mut::<UIControlHostObject>(this).action_targets.push((target, action, events));
 }
