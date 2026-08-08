@@ -88,6 +88,13 @@ pub trait GLES {
     fn is_es2(&self) -> bool {
         false
     }
+    /// Returns `true` when this backend translates the guest fixed-function
+    /// GLES 1.1 API into a shader-based host API. Translators need a more
+    /// conservative presentation path on mobile drivers because switching
+    /// away from the guest framebuffer can discard unresolved tile contents.
+    fn is_translator(&self) -> bool {
+        false
+    }
     /// Returns `true` if this backend is a real (native) OpenGL ES 1.1 driver,
     /// i.e. one that strictly enforces the ES 1.1 spec and rejects desktop-GL
     /// enums. The desktop GL 2.1 emulation backend (`gles1_on_gl2`) returns

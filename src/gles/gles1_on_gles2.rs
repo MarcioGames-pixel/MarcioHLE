@@ -948,6 +948,9 @@ impl GLES for GLES1OnGLES2<'_> {
     fn is_es2(&self) -> bool {
         true
     }
+    fn is_translator(&self) -> bool {
+        true
+    }
 
     unsafe fn driver_description(&self) -> String {
         let version = CStr::from_ptr(gl::GetString(gl::VERSION) as *const _);

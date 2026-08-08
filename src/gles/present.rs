@@ -79,7 +79,7 @@ pub fn centered_texture_rotation(rotation_matrix: Matrix<2>) -> Matrix<4> {
     let r = Matrix::<4>::from(&rotation_matrix);
     let to_center = Matrix::<4>::translate_3d(-0.5, -0.5, 0.0);
     let from_center = Matrix::<4>::translate_3d(0.5, 0.5, 0.0);
-    to_center.multiply(&r).multiply(&from_center)
+    from_center.multiply(&r).multiply(&to_center)
 }
 
 /// Present the the latest frame (e.g. the app's splash screen or rendering

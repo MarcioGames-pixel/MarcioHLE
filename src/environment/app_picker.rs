@@ -495,8 +495,9 @@ fn app_picker_inner(
     );
     let main_view: id = msg_class![env; UIView alloc];
     let main_view: id = msg![env; main_view initWithFrame:app_frame];
-    let picker_background: id = msg_class![env; UIColor lightGrayColor];
+    let picker_background: id = msg_class![env; UIColor colorWithWhite:0.72 alpha:1.0];
     () = msg![env; main_view setBackgroundColor:picker_background];
+    () = msg![env; main_view setOpaque:true];
     () = msg![env; window setBackgroundColor:picker_background];
     () = msg![env; window addSubview:main_view];
 
@@ -1858,7 +1859,7 @@ fn setup_quick_options(
     () = msg![env; main_view setScrollEnabled:true];
     () = msg![env; main_view setShowsVerticalScrollIndicator:true];
     () = msg![env; main_view setAlwaysBounceVertical:true];
-    let bg_color: id = msg_class![env; UIColor lightGrayColor];
+    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.72 alpha:1.0];
     () = msg![env; main_view setBackgroundColor:bg_color];
     () = msg![env; main_view setOpaque:true];
     // This main_view is hidden until the copyright info button is tapped.

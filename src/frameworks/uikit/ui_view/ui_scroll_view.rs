@@ -121,7 +121,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 + (id)allocWithZone:(NSZonePtr)_zone {
     let host_object = Box::<UIScrollViewHostObject>::default();
-    env.objc.alloc_object(this, host_object, &mut env.mem)
+    let view = env.objc.alloc_object(this, host_object, &mut env.mem);
+    let _: id = msg![env; view initWithFrame:(CGRect {
+        origin: CGPoint { x: 0.0, y: 0.0 },
+        size: CGSize { width: 0.0, height: 0.0 },
+    })];
+    view
 }
 
 // MARK: - Delegate

@@ -1001,6 +1001,153 @@ unsafe fn read_renderbuffer(gles: &mut dyn GLES, mut pixel_buffer: Vec<u8>) -> (
     (pixel_buffer, width_u32, height_u32)
 }
 
+/// Translator-specific presenter. It keeps the guest framebuffer bound while copying the completed renderbuffer, avoiding tile-cache loss on mobile drivers.
+unsafe fn present_renderbuffer_es2_translator(
+    gles: &mut dyn GLES,
+    viewport: (u32, u32, u32, u32),
+    rotation_matrix: crate::matrix::Matrix<2>,
+    _virtual_cursor_visible_at: Option<(f32, f32, bool)>,
+) {
+    use crate::gles::gles2_raw as gles2;
+
+    let mut renderbuffer: GLint = 0;
+    let mut width: GLint = 0;
+    let mut height: GLint = 0;
+    gles.GetIntegerv(gles2::RENDERBUFFER_BINDING, &mut renderbuffer);
+    gles.GetRenderbufferParameteriv(gles2::RENDERBUFFER, gles2::RENDERBUFFER_WIDTH, &mut width);
+    gles.GetRenderbufferParameteriv(gles2::RENDERBUFFER, gles2::RENDERBUFFER_HEIGHT, &mut height);
+    if renderbuffer == 0 || width <= 0 || height <= 0 {
+        log_once_fmt!(
+            "present_renderbuffer_es2_translator: invalid source renderbuffer {} size {}x{}",
+            renderbuffer,
+            width,
+            height
+        );
+        return;
+    }
+
+    let present_objects = ensure_present_objects(gles);
+    let mut old_framebuffer: GLint = 0;
+    let mut old_texture: GLint = 0;
+    let mut old_array_buffer: GLint = 0;
+    let mut old_program: GLint = 0;
+    let mut old_active_texture: GLint = 0;
+    gles.GetIntegerv(gles2::FRAMEBUFFER_BINDING, &mut old_framebuffer);
+    gles.GetIntegerv(gles2::TEXTURE_BINDING_2D, &mut old_texture);
+    gles.GetIntegerv(gles2::ARRAY_BUFFER_BINDING, &mut old_array_buffer);
+    gles.GetIntegerv(gles2::CURRENT_PROGRAM, &mut old_program);
+    gles.GetIntegerv(gles2::ACTIVE_TEXTURE, &mut old_active_texture);
+    let depth_was_enabled = gles.IsEnabled(gles2::DEPTH_TEST) != 0;
+    let cull_was_enabled = gles.IsEnabled(gles2::CULL_FACE) != 0;
+    let blend_was_enabled = gles.IsEnabled(gles2::BLEND) != 0;
+    let scissor_was_enabled = gles.IsEnabled(gles2::SCISSOR_TEST) != 0;
+    let mut old_attrib_6 = 0;
+    let mut old_attrib_7 = 0;
+    gles.GetVertexAttribiv(6, gles2::VERTEX_ATTRIB_ARRAY_ENABLED, &mut old_attrib_6);
+    gles.GetVertexAttribiv(7, gles2::VERTEX_ATTRIB_ARRAY_ENABLED, &mut old_attrib_7);
+
+    gles.BindBuffer(gles2::ARRAY_BUFFER, present_objects.quad_vbo);
+    #[rustfmt::skip]
+    let quad_vertices: [f32; 24] = [
+        -1.0, -1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 0.0,
+        -1.0, 1.0, 0.0, 1.0, 1.0, -1.0, 1.0, 0.0,
+        1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, 1.0,
+    ];
+    gles.BufferData(
+        gles2::ARRAY_BUFFER,
+        std::mem::size_of_val(&quad_vertices) as isize,
+        quad_vertices.as_ptr().cast(),
+        gles2::STREAM_DRAW,
+    );
+    if old_framebuffer == 0 {
+        gles.BindFramebuffer(gles2::FRAMEBUFFER, present_objects.framebuffer);
+        gles.FramebufferRenderbuffer(
+            gles2::FRAMEBUFFER,
+            gles2::COLOR_ATTACHMENT0,
+            gles2::RENDERBUFFER,
+            renderbuffer as GLuint,
+        );
+    }
+    gles.Finish();
+    gles.ActiveTexture(gles2::TEXTURE0);
+    gles.BindTexture(gles2::TEXTURE_2D, present_objects.texture);
+    gles.CopyTexImage2D(gles2::TEXTURE_2D, 0, gles2::RGBA, 0, 0, width, height, 0);
+
+    gles.BindFramebuffer(gles2::FRAMEBUFFER, 0);
+    gles.Viewport(
+        viewport.0 as _,
+        viewport.1 as _,
+        viewport.2 as _,
+        viewport.3 as _,
+    );
+    gles.Disable(gles2::DEPTH_TEST);
+    gles.Disable(gles2::CULL_FACE);
+    gles.Disable(gles2::BLEND);
+    gles.Disable(gles2::SCISSOR_TEST);
+    let Some(program) = ensure_present_program(gles) else {
+        gles.UseProgram(old_program.max(0) as GLuint);
+        gles.BindBuffer(gles2::ARRAY_BUFFER, old_array_buffer as GLuint);
+        gles.BindFramebuffer(gles2::FRAMEBUFFER, old_framebuffer as GLuint);
+        gles.BindTexture(gles2::TEXTURE_2D, old_texture as GLuint);
+        gles.ActiveTexture(old_active_texture as GLenum);
+        return;
+    };
+    gles.UseProgram(program.program);
+    gles.Uniform1i(program.u_tex, 0);
+    let matrix = crate::gles::present::centered_texture_rotation(rotation_matrix);
+    gles.UniformMatrix4fv(
+        program.u_tex_mat,
+        1,
+        gles2::FALSE,
+        matrix.columns().as_ptr().cast(),
+    );
+    gles.BindBuffer(gles2::ARRAY_BUFFER, present_objects.quad_vbo);
+    gles.EnableVertexAttribArray(program.a_pos as GLuint);
+    gles.EnableVertexAttribArray(program.a_uv as GLuint);
+    gles.VertexAttribPointer(
+        program.a_pos as GLuint,
+        2,
+        gles2::FLOAT,
+        gles2::FALSE,
+        16,
+        std::ptr::null(),
+    );
+    gles.VertexAttribPointer(
+        program.a_uv as GLuint,
+        2,
+        gles2::FLOAT,
+        gles2::FALSE,
+        16,
+        8usize as *const _,
+    );
+    gles.DrawArrays(gles2::TRIANGLES, 0, 6);
+
+    if old_attrib_6 == 0 {
+        gles.DisableVertexAttribArray(6);
+    }
+    if old_attrib_7 == 0 {
+        gles.DisableVertexAttribArray(7);
+    }
+    gles.UseProgram(old_program.max(0) as GLuint);
+    gles.BindBuffer(gles2::ARRAY_BUFFER, old_array_buffer as GLuint);
+    gles.BindFramebuffer(gles2::FRAMEBUFFER, old_framebuffer as GLuint);
+    gles.BindTexture(gles2::TEXTURE_2D, old_texture as GLuint);
+    gles.ActiveTexture(old_active_texture as GLenum);
+    if depth_was_enabled {
+        gles.Enable(gles2::DEPTH_TEST);
+    }
+    if cull_was_enabled {
+        gles.Enable(gles2::CULL_FACE);
+    }
+    if blend_was_enabled {
+        gles.Enable(gles2::BLEND);
+    }
+    if scissor_was_enabled {
+        gles.Enable(gles2::SCISSOR_TEST);
+    }
+    while gles.GetError() != 0 {}
+}
+
 /// Shader-based variant of the renderbuffer presenter, used when the
 /// underlying driver is a real OpenGL ES 2.0 driver (no fixed-function
 /// pipeline available).
@@ -1626,7 +1773,16 @@ unsafe fn present_renderbuffer(env: &mut Environment) {
     // glEnableClientState / glVertexPointer. Use a small dedicated
     // shader-based presenter instead.
     if gles.is_es2() {
-        present_renderbuffer_es2(gles, viewport, rotation_matrix, virtual_cursor_visible_at);
+        if gles.is_translator() {
+            present_renderbuffer_es2_translator(
+                gles,
+                viewport,
+                rotation_matrix,
+                virtual_cursor_visible_at,
+            );
+        } else {
+            present_renderbuffer_es2(gles, viewport, rotation_matrix, virtual_cursor_visible_at);
+        }
         std::mem::drop(gles_boxed);
         env.window.as_mut().unwrap().swap_window();
         return;
