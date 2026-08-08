@@ -278,6 +278,16 @@ pub struct GLES1OnGLES2Context {
     state: TranslatorState,
 }
 
+impl GLES1OnGLES2Context {
+    pub fn new_with_gl_version(window: &mut Window, version: GLVersion) -> Result<Self, String> {
+        Ok(Self {
+            gl_ctx: window.create_gl_context(version)?,
+            is_loaded: false,
+            state: TranslatorState::new(),
+        })
+    }
+}
+
 impl GLESContext for GLES1OnGLES2Context {
     fn description() -> &'static str {
         "OpenGL ES 1.1 translated to native OpenGL ES 2.0 shaders"
@@ -285,14 +295,6 @@ impl GLESContext for GLES1OnGLES2Context {
 
     fn new(window: &mut Window) -> Result<Self, String> {
         Self::new_with_gl_version(window, GLVersion::GLES20)
-    }
-
-    pub fn new_with_gl_version(window: &mut Window, version: GLVersion) -> Result<Self, String> {
-        Ok(Self {
-            gl_ctx: window.create_gl_context(version)?,
-            is_loaded: false,
-            state: TranslatorState::new(),
-        })
     }
 
     fn make_current<'gl_ctx, 'win: 'gl_ctx>(
