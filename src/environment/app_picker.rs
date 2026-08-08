@@ -365,11 +365,7 @@ const CLASSES: ClassExports = objc_classes! {
         0 => crate::options::GraphicsApi::Default,
         1 => crate::options::GraphicsApi::Translator,
         2 => crate::options::GraphicsApi::TranslatorGLES30,
-        3 => crate::options::GraphicsApi::GLES10,
-        4 => crate::options::GraphicsApi::GLES11,
-        5 => crate::options::GraphicsApi::GLES20,
-        6 => crate::options::GraphicsApi::GLES30,
-        7 => crate::options::GraphicsApi::Metal,
+        3 => crate::options::GraphicsApi::Metal,
         _ => crate::options::GraphicsApi::Default,
     };
     env.objc.borrow_mut::<AppPickerDelegateHostObject>(this).graphics_api = Some(api);
@@ -499,7 +495,7 @@ fn app_picker_inner(
     );
     let main_view: id = msg_class![env; UIView alloc];
     let main_view: id = msg![env; main_view initWithFrame:app_frame];
-    let picker_background: id = msg_class![env; UIColor colorWithWhite:0.94 alpha:1.0];
+    let picker_background: id = msg_class![env; UIColor lightGrayColor];
     () = msg![env; main_view setBackgroundColor:picker_background];
     () = msg![env; window setBackgroundColor:picker_background];
     () = msg![env; window addSubview:main_view];
@@ -1862,8 +1858,9 @@ fn setup_quick_options(
     () = msg![env; main_view setScrollEnabled:true];
     () = msg![env; main_view setShowsVerticalScrollIndicator:true];
     () = msg![env; main_view setAlwaysBounceVertical:true];
-    let bg_color: id = msg_class![env; UIColor colorWithWhite:0.94 alpha:1.0];
+    let bg_color: id = msg_class![env; UIColor lightGrayColor];
     () = msg![env; main_view setBackgroundColor:bg_color];
+    () = msg![env; main_view setOpaque:true];
     // This main_view is hidden until the copyright info button is tapped.
     () = msg![env; main_view setHidden:true];
     () = msg![env; super_view addSubview:main_view];
@@ -2242,10 +2239,6 @@ const GRAPHICS_API_ENTRIES: &[(&str, crate::options::GraphicsApi)] = &[
         "OpenGL ES 1.1 → OpenGL ES 3.0 translator",
         crate::options::GraphicsApi::TranslatorGLES30,
     ),
-    ("OpenGL ES 1.0", crate::options::GraphicsApi::GLES10),
-    ("OpenGL ES 1.1", crate::options::GraphicsApi::GLES11),
-    ("OpenGL ES 2.0", crate::options::GraphicsApi::GLES20),
-    ("OpenGL ES 3.0", crate::options::GraphicsApi::GLES30),
     ("Metal", crate::options::GraphicsApi::Metal),
 ];
 
