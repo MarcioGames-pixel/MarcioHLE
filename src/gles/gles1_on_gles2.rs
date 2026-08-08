@@ -284,8 +284,12 @@ impl GLESContext for GLES1OnGLES2Context {
     }
 
     fn new(window: &mut Window) -> Result<Self, String> {
+        Self::new_with_gl_version(window, GLVersion::GLES20)
+    }
+
+    pub fn new_with_gl_version(window: &mut Window, version: GLVersion) -> Result<Self, String> {
         Ok(Self {
-            gl_ctx: window.create_gl_context(GLVersion::GLES20)?,
+            gl_ctx: window.create_gl_context(version)?,
             is_loaded: false,
             state: TranslatorState::new(),
         })
