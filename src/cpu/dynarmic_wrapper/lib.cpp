@@ -5,10 +5,6 @@
  */
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <array>
-#include <memory>
-#include <optional>
 
 #include "dynarmic/interface/A32/a32.h"
 #include "dynarmic/interface/A32/config.h"
@@ -20,31 +16,56 @@ namespace touchHLE::cpu {
 using VAddr = std::uint32_t;
 
 extern "C" {
+
 struct touchHLE_Mem;
 
 std::uint8_t touchHLE_cpu_read_u8(
-    touchHLE_Mem *mem, VAddr addr, bool *error);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    bool *error
+);
 
 std::uint16_t touchHLE_cpu_read_u16(
-    touchHLE_Mem *mem, VAddr addr, bool *error);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    bool *error
+);
 
 std::uint32_t touchHLE_cpu_read_u32(
-    touchHLE_Mem *mem, VAddr addr, bool *error);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    bool *error
+);
 
 std::uint64_t touchHLE_cpu_read_u64(
-    touchHLE_Mem *mem, VAddr addr, bool *error);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    bool *error
+);
 
 bool touchHLE_cpu_write_u8(
-    touchHLE_Mem *mem, VAddr addr, std::uint8_t value);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    std::uint8_t value
+);
 
 bool touchHLE_cpu_write_u16(
-    touchHLE_Mem *mem, VAddr addr, std::uint16_t value);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    std::uint16_t value
+);
 
 bool touchHLE_cpu_write_u32(
-    touchHLE_Mem *mem, VAddr addr, std::uint32_t value);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    std::uint32_t value
+);
 
 bool touchHLE_cpu_write_u64(
-    touchHLE_Mem *mem, VAddr addr, std::uint64_t value);
+    touchHLE_Mem *mem,
+    VAddr addr,
+    std::uint64_t value
+);
 
 struct touchHLE_DynarmicContext {
     std::array<std::uint32_t, 16> regs;
@@ -52,6 +73,7 @@ struct touchHLE_DynarmicContext {
     std::uint32_t cpsr;
     std::uint32_t fpscr;
 };
+
 }
 
 const auto HaltReasonSvc =
@@ -63,8 +85,11 @@ const auto HaltReasonUndefinedInstruction =
 const auto HaltReasonBreakpoint =
     Dynarmic::HaltReason::UserDefined3;
 
-class Environment final : public Dynarmic::A32::UserCallbacks {
+class Environment final
+    : public Dynarmic::A32::UserCallbacks {
+
 public:
+
     Dynarmic::A32::Jit *cpu = nullptr;
     touchHLE_Mem *mem = nullptr;
     std::uint64_t ticks_remaining;
@@ -75,8 +100,12 @@ private:
     std::uint8_t MemoryRead8(VAddr vaddr) override {
         bool error = false;
 
-        auto value = touchHLE_cpu_read_u8(
-            mem, vaddr, &error);
+        auto value =
+            touchHLE_cpu_read_u8(
+                mem,
+                vaddr,
+                &error
+            );
 
         if (error) {
             std::fprintf(
@@ -96,8 +125,12 @@ private:
     std::uint16_t MemoryRead16(VAddr vaddr) override {
         bool error = false;
 
-        auto value = touchHLE_cpu_read_u16(
-            mem, vaddr, &error);
+        auto value =
+            touchHLE_cpu_read_u16(
+                mem,
+                vaddr,
+                &error
+            );
 
         if (error) {
             std::fprintf(
@@ -117,8 +150,12 @@ private:
     std::uint32_t MemoryRead32(VAddr vaddr) override {
         bool error = false;
 
-        auto value = touchHLE_cpu_read_u32(
-            mem, vaddr, &error);
+        auto value =
+            touchHLE_cpu_read_u32(
+                mem,
+                vaddr,
+                &error
+            );
 
         if (error) {
             std::fprintf(
@@ -138,8 +175,12 @@ private:
     std::uint64_t MemoryRead64(VAddr vaddr) override {
         bool error = false;
 
-        auto value = touchHLE_cpu_read_u64(
-            mem, vaddr, &error);
+        auto value =
+            touchHLE_cpu_read_u64(
+                mem,
+                vaddr,
+                &error
+            );
 
         if (error) {
             std::fprintf(
@@ -158,11 +199,15 @@ private:
 
     std::optional<std::uint32_t>
     MemoryReadCode(VAddr vaddr) override {
+
         bool error = false;
 
-        auto value = touchHLE_cpu_read_u32(
-            mem, vaddr, &error
-        );
+        auto value =
+            touchHLE_cpu_read_u32(
+                mem,
+                vaddr,
+                &error
+            );
 
         if (error) {
             std::fprintf(
@@ -181,12 +226,19 @@ private:
         VAddr vaddr,
         std::uint8_t value
     ) override {
-        if (touchHLE_cpu_write_u8(
-                mem, vaddr, value)) {
+
+        if (
+            touchHLE_cpu_write_u8(
+                mem,
+                vaddr,
+                value
+            )
+        ) {
 
             std::fprintf(
                 stderr,
-                "[CPU][MEM][WRITE8] ERROR addr=0x%08x value=0x%02x\n",
+                "[CPU][MEM][WRITE8] ERROR "
+                "addr=0x%08x value=0x%02x\n",
                 vaddr,
                 value
             );
@@ -201,12 +253,19 @@ private:
         VAddr vaddr,
         std::uint16_t value
     ) override {
-        if (touchHLE_cpu_write_u16(
-                mem, vaddr, value)) {
+
+        if (
+            touchHLE_cpu_write_u16(
+                mem,
+                vaddr,
+                value
+            )
+        ) {
 
             std::fprintf(
                 stderr,
-                "[CPU][MEM][WRITE16] ERROR addr=0x%08x value=0x%04x\n",
+                "[CPU][MEM][WRITE16] ERROR "
+                "addr=0x%08x value=0x%04x\n",
                 vaddr,
                 value
             );
@@ -221,12 +280,19 @@ private:
         VAddr vaddr,
         std::uint32_t value
     ) override {
-        if (touchHLE_cpu_write_u32(
-                mem, vaddr, value)) {
+
+        if (
+            touchHLE_cpu_write_u32(
+                mem,
+                vaddr,
+                value
+            )
+        ) {
 
             std::fprintf(
                 stderr,
-                "[CPU][MEM][WRITE32] ERROR addr=0x%08x value=0x%08x\n",
+                "[CPU][MEM][WRITE32] ERROR "
+                "addr=0x%08x value=0x%08x\n",
                 vaddr,
                 value
             );
@@ -241,12 +307,19 @@ private:
         VAddr vaddr,
         std::uint64_t value
     ) override {
-        if (touchHLE_cpu_write_u64(
-                mem, vaddr, value)) {
+
+        if (
+            touchHLE_cpu_write_u64(
+                mem,
+                vaddr,
+                value
+            )
+        ) {
 
             std::fprintf(
                 stderr,
-                "[CPU][MEM][WRITE64] ERROR addr=0x%08x value=0x%016llx\n",
+                "[CPU][MEM][WRITE64] ERROR "
+                "addr=0x%08x value=0x%016llx\n",
                 vaddr,
                 static_cast<unsigned long long>(value)
             );
@@ -262,6 +335,7 @@ private:
         std::uint8_t,
         std::uint8_t
     ) override {
+
         std::fprintf(
             stderr,
             "[CPU][EXCLUSIVE] MemoryWriteExclusive8 TODO\n"
@@ -275,6 +349,7 @@ private:
         std::uint16_t,
         std::uint16_t
     ) override {
+
         std::fprintf(
             stderr,
             "[CPU][EXCLUSIVE] MemoryWriteExclusive16 TODO\n"
@@ -288,13 +363,17 @@ private:
         std::uint32_t value,
         std::uint32_t expected
     ) override {
-        auto current = MemoryRead32(addr);
+
+        auto current =
+            MemoryRead32(addr);
 
         if (current != expected) {
+
             std::fprintf(
                 stderr,
                 "[CPU][EXCLUSIVE32] mismatch "
-                "addr=0x%08x expected=0x%08x got=0x%08x\n",
+                "addr=0x%08x expected=0x%08x "
+                "got=0x%08x\n",
                 addr,
                 expected,
                 current
@@ -303,7 +382,10 @@ private:
             abort();
         }
 
-        MemoryWrite32(addr, value);
+        MemoryWrite32(
+            addr,
+            value
+        );
 
         return true;
     }
@@ -313,6 +395,7 @@ private:
         std::uint64_t,
         std::uint64_t
     ) override {
+
         std::fprintf(
             stderr,
             "[CPU][EXCLUSIVE] MemoryWriteExclusive64 TODO\n"
@@ -325,6 +408,7 @@ private:
         std::uint32_t pc,
         size_t num_instructions
     ) override {
+
         std::fprintf(
             stderr,
             "[CPU][INTERPRETER] fallback "
@@ -336,7 +420,10 @@ private:
         abort();
     }
 
-    void CallSVC(std::uint32_t svc) override {
+    void CallSVC(
+        std::uint32_t svc
+    ) override {
+
         halting_svc = svc;
 
         std::fprintf(
@@ -345,7 +432,9 @@ private:
             svc
         );
 
-        cpu->HaltExecution(HaltReasonSvc);
+        cpu->HaltExecution(
+            HaltReasonSvc
+        );
     }
 
     void ExceptionRaised(
@@ -355,19 +444,21 @@ private:
 
         std::fprintf(
             stderr,
-            "[CPU][EXCEPTION] pc=0x%08x "
-            "exception=%u\n",
+            "[CPU][EXCEPTION] "
+            "pc=0x%08x exception=%u\n",
             pc,
             unsigned(exception)
         );
 
-        if (exception ==
-            Dynarmic::A32::Exception::NoExecuteFault) {
+        if (
+            exception ==
+            Dynarmic::A32::Exception::NoExecuteFault
+        ) {
 
             std::fprintf(
                 stderr,
-                "[CPU][EXCEPTION] NoExecuteFault "
-                "pc=0x%08x\n",
+                "[CPU][EXCEPTION] "
+                "NoExecuteFault pc=0x%08x\n",
                 pc
             );
 
@@ -382,7 +473,8 @@ private:
 
             std::fprintf(
                 stderr,
-                "[CPU][EXCEPTION] UndefinedInstruction "
+                "[CPU][EXCEPTION] "
+                "UndefinedInstruction "
                 "pc=0x%08x\n",
                 pc
             );
@@ -398,8 +490,8 @@ private:
 
             std::fprintf(
                 stderr,
-                "[CPU][EXCEPTION] Breakpoint "
-                "pc=0x%08x\n",
+                "[CPU][EXCEPTION] "
+                "Breakpoint pc=0x%08x\n",
                 pc
             );
 
@@ -411,8 +503,9 @@ private:
 
             std::fprintf(
                 stderr,
-                "[CPU][EXCEPTION] UNEXPECTED "
-                "exception=%u pc=0x%08x\n",
+                "[CPU][EXCEPTION] "
+                "UNEXPECTED exception=%u "
+                "pc=0x%08x\n",
                 unsigned(exception),
                 pc
             );
@@ -424,6 +517,7 @@ private:
     void AddTicks(
         std::uint64_t ticks
     ) override {
+
         if (ticks > ticks_remaining) {
             ticks_remaining = 0;
             return;
@@ -444,10 +538,12 @@ class ArmDynarmicCP15
     std::uint32_t addr = 0;
 
 public:
+
     using CoprocReg =
         Dynarmic::A32::CoprocReg;
 
-    CallbackOrAccessOneWord CompileSendOneWord(
+    CallbackOrAccessOneWord
+    CompileSendOneWord(
         bool two,
         unsigned opc1,
         CoprocReg CRn,
@@ -465,22 +561,11 @@ public:
 
             std::fprintf(
                 stderr,
-                "[CPU][CP15] DMB operation\n"
+                "[CPU][CP15] DMB\n"
             );
 
             return &addr;
         }
-
-        std::fprintf(
-            stderr,
-            "[CPU][CP15] Unhandled SendOneWord "
-            "two=%d opc1=%u CRn=%u CRm=%u opc2=%u\n",
-            two,
-            opc1,
-            unsigned(CRn),
-            unsigned(CRm),
-            opc2
-        );
 
         return CallbackOrAccessOneWord{};
     }
@@ -574,15 +659,18 @@ public:
 
         std::fprintf(
             stderr,
-            "[CPU][INIT] Creating Dynarmic wrapper\n"
+            "[CPU][INIT] Creating Dynarmic\n"
         );
 
         Dynarmic::A32::UserConfig user_config;
 
-        user_config.callbacks = &env;
+        user_config.callbacks =
+            &env;
 
         user_config.coprocessors[15] =
-            std::make_shared<ArmDynarmicCP15>();
+            std::make_shared<
+                ArmDynarmicCP15
+            >();
 
         mon =
             std::make_unique<
@@ -617,7 +705,7 @@ public:
 
                 std::fprintf(
                     stderr,
-                    "[CPU][INIT] Too many null pages: "
+                    "[CPU][INIT] Too many null pages "
                     "%zu / %zu\n",
                     null_page_count,
                     page_table.size()
@@ -642,7 +730,7 @@ public:
 
             std::fprintf(
                 stderr,
-                "[CPU][INIT] Direct memory=%p "
+                "[CPU][INIT] memory=%p "
                 "null_pages=%zu\n",
                 direct_memory_access_ptr,
                 null_page_count
@@ -654,11 +742,12 @@ public:
                 Dynarmic::A32::Jit
             >(user_config);
 
-        env.cpu = cpu.get();
+        env.cpu =
+            cpu.get();
 
         std::fprintf(
             stderr,
-            "[CPU][INIT] Dynarmic initialized\n"
+            "[CPU][INIT] Dynarmic ready\n"
         );
     }
 
@@ -687,6 +776,7 @@ public:
         VAddr start,
         std::uint32_t size
     ) {
+
         std::fprintf(
             stderr,
             "[CPU][CACHE] invalidate "
@@ -734,7 +824,8 @@ public:
         std::uint64_t *ticks
     ) {
 
-        env.mem = mem;
+        env.mem =
+            mem;
 
         Dynarmic::HaltReason hr;
 
@@ -743,23 +834,37 @@ public:
             env.ticks_remaining =
                 *ticks;
 
-            hr = cpu->Run();
+            hr =
+                cpu->Run();
 
         } else {
 
-            hr = cpu->Step();
+            hr =
+                cpu->Step();
         }
+
+        const std::uint32_t pc =
+            cpu->Regs()[15];
+
+        const std::uint32_t lr =
+            cpu->Regs()[14];
+
+        const std::uint32_t cpsr =
+            cpu->Cpsr();
+
+        const bool thumb =
+            (cpsr & (1u << 5)) != 0;
 
         std::fprintf(
             stderr,
             "[CPU][HALT] reason=0x%x "
-            "pc=0x%08x cpsr=0x%08x "
-            "thumb=%d\n",
+            "pc=0x%08x lr=0x%08x "
+            "cpsr=0x%08x thumb=%d\n",
             unsigned(hr),
-            cpu->Regs()[Dynarmic::A32::Reg::PC],
-            cpu->Cpsr(),
-            (cpu->Cpsr() &
-             Dynarmic::A32::CPSR::T) != 0
+            pc,
+            lr,
+            cpsr,
+            thumb
         );
 
         std::int32_t res;
@@ -784,7 +889,10 @@ public:
 
             std::fprintf(
                 stderr,
-                "[CPU][RESULT] MemoryAbort\n"
+                "[CPU][RESULT] MemoryAbort "
+                "pc=0x%08x lr=0x%08x\n",
+                pc,
+                lr
             );
 
             res = -2;
@@ -796,24 +904,16 @@ public:
             )
         ) {
 
-            auto pc =
-                cpu->Regs()[
-                    Dynarmic::A32::Reg::PC
-                ];
-
-            auto lr =
-                cpu->Regs()[
-                    Dynarmic::A32::Reg::LR
-                ];
-
             std::fprintf(
                 stderr,
-                "[CPU][RESULT] UndefinedInstruction "
-                "PC=0x%08x LR=0x%08x "
-                "CPSR=0x%08x\n",
+                "[CPU][RESULT] "
+                "UndefinedInstruction "
+                "pc=0x%08x lr=0x%08x "
+                "cpsr=0x%08x thumb=%d\n",
                 pc,
                 lr,
-                cpu->Cpsr()
+                cpsr,
+                thumb
             );
 
             res = -3;
@@ -827,7 +927,10 @@ public:
 
             std::fprintf(
                 stderr,
-                "[CPU][RESULT] Breakpoint\n"
+                "[CPU][RESULT] Breakpoint "
+                "pc=0x%08x lr=0x%08x\n",
+                pc,
+                lr
             );
 
             res = -4;
@@ -841,8 +944,11 @@ public:
 
             std::fprintf(
                 stderr,
-                "[CPU][RESULT] SVC=0x%08x\n",
-                env.halting_svc
+                "[CPU][RESULT] SVC=0x%08x "
+                "pc=0x%08x lr=0x%08x\n",
+                env.halting_svc,
+                pc,
+                lr
             );
 
             res =
@@ -855,14 +961,20 @@ public:
             std::fprintf(
                 stderr,
                 "[CPU][RESULT] UNHANDLED "
-                "halt reason=0x%x\n",
-                unsigned(hr)
+                "halt_reason=0x%x "
+                "pc=0x%08x lr=0x%08x "
+                "cpsr=0x%08x\n",
+                unsigned(hr),
+                pc,
+                lr,
+                cpsr
             );
 
             abort();
         }
 
-        env.mem = nullptr;
+        env.mem =
+            nullptr;
 
         if (ticks) {
             *ticks =
