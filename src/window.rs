@@ -1122,11 +1122,9 @@ impl Window {
                         continue;
                     }
                 }
-                E::AppWillEnterBackground { .. } => {
-    log!("Received app-will-resign-active event (Ignored).");
-    // Apenas pule este evento do Android sem alterar o estado interno do emulador
-    continue;
-}
+                                E::AppWillEnterBackground { .. } => {
+                    log!("Received app-will-resign-active event (Ignored).");
+                    continue;
                 }
                 E::AppTerminating { .. } => {
                     log!("Received app-will-terminate event.");
