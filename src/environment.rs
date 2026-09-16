@@ -1949,9 +1949,10 @@ impl Environment {
                     return;
                 }
 
-                // Instead of skipping forward through garbage data, pretend the
-                // faulting function returned to its caller.
-                self.cpu.branch(GuestFunction::from_addr_with_thumb_bit(lr));
+                                log_no_panic!("Forcing PC advance to bypass Unity instruction trap.");
+                self.cpu.regs_mut()[cpu::Cpu::PC] = pc.wrapping_add(instruction_len);
+                self.udf_bypass_last = None;
+                self.udf_bypass_count = 0;
                 return;
             }
 
