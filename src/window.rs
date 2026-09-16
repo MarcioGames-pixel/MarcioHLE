@@ -1131,7 +1131,7 @@ impl Window {
     // TODO: Add a mechanism for re-enabling polling, if at some
     // point we support returning touchHLE to the foreground.
     // self.enable_event_polling = false;
-    continue;
+    // continue;
                 }
                 E::AppTerminating { .. } => {
                     log!("Received app-will-terminate event.");
