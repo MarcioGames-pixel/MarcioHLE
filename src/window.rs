@@ -1124,14 +1124,9 @@ impl Window {
                 }
                 E::AppWillEnterBackground { .. } => {
     log!("Received app-will-resign-active event (Ignored).");
-    // assert!(self.high_priority_event.is_none());
-    // self.high_priority_event = Some(Event::AppWillResignActive);
-    // For some reason, if we don't pause event polling, we will
-    // never finish handling the event.
-    // TODO: Add a mechanism for re-enabling polling, if at some
-    // point we support returning touchHLE to the foreground.
-    // self.enable_event_polling = false;
-    // continue;
+    // Apenas pule este evento do Android sem alterar o estado interno do emulador
+    continue;
+}
                 }
                 E::AppTerminating { .. } => {
                     log!("Received app-will-terminate event.");
