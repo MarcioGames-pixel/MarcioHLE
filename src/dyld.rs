@@ -1626,9 +1626,9 @@ Some(f)
     cpu.regs()[1],
     cpu.regs()[2],
     cpu.regs()[3],
-    cpu.regs()[cpu::Cpu::SP],
-    cpu.regs()[cpu::Cpu::LR],
-    cpu.regs()[cpu::Cpu::PC],
+    cpu.regs()[Cpu::SP],
+    cpu.regs()[Cpu::LR],
+    cpu.regs()[Cpu::PC],
     cpu.cpsr()
 );
 return Some(f);
