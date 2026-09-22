@@ -1438,8 +1438,23 @@ impl Dyld {
                     );
                     return None;
                 };
-                log_dbg!("Call to host function, already linked: {}", symbol);
-                Some(f)
+                log_dbg!(
+    "HOST CALL already-linked: symbol={} svc={} svc_pc={:#x} \
+     r0={:#x} r1={:#x} r2={:#x} r3={:#x} \
+     sp={:#x} lr={:#x} pc={:#x} cpsr={:#x}",
+    symbol,
+    svc,
+    svc_pc,
+    cpu.regs()[0],
+    cpu.regs()[1],
+    cpu.regs()[2],
+    cpu.regs()[3],
+    cpu.regs()[cpu::Cpu::SP],
+    cpu.regs()[cpu::Cpu::LR],
+    cpu.regs()[cpu::Cpu::PC],
+    cpu.cpsr()
+);
+Some(f)
             }
         }
     }
@@ -1601,9 +1616,22 @@ impl Dyld {
                 symbol,
                 stub_function_ptr
             );
-            // Return the host function so that we can call it now that we're
-            // done.
-            return Some(f);
+           log_dbg!(
+    "HOST CALL lazy-linked: symbol={} svc_pc={:#x} \
+     r0={:#x} r1={:#x} r2={:#x} r3={:#x} \
+     sp={:#x} lr={:#x} pc={:#x} cpsr={:#x}",
+    symbol,
+    svc_pc,
+    cpu.regs()[0],
+    cpu.regs()[1],
+    cpu.regs()[2],
+    cpu.regs()[3],
+    cpu.regs()[cpu::Cpu::SP],
+    cpu.regs()[cpu::Cpu::LR],
+    cpu.regs()[cpu::Cpu::PC],
+    cpu.cpsr()
+);
+return Some(f);
         }
 
         // Fallback: the symbol isn't implemented by any host dylib and isn't
