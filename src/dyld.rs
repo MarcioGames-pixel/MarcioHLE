@@ -1439,19 +1439,18 @@ impl Dyld {
                     return None;
                 };
                 log_dbg!(
-    "HOST CALL already-linked: symbol={} svc={} svc_pc={:#x} \
+    "HOST CALL lazy-linked: symbol={} svc_pc={:#x} \
      r0={:#x} r1={:#x} r2={:#x} r3={:#x} \
      sp={:#x} lr={:#x} pc={:#x} cpsr={:#x}",
     symbol,
-    svc,
     svc_pc,
     cpu.regs()[0],
     cpu.regs()[1],
     cpu.regs()[2],
     cpu.regs()[3],
-    cpu.regs()[cpu::Cpu::SP],
-    cpu.regs()[cpu::Cpu::LR],
-    cpu.regs()[cpu::Cpu::PC],
+    cpu.regs()[Cpu::SP],
+    cpu.regs()[Cpu::LR],
+    cpu.regs()[Cpu::PC],
     cpu.cpsr()
 );
 Some(f)
