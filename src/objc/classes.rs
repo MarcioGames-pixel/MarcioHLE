@@ -1347,30 +1347,10 @@ pub fn objc_retainAutoreleaseReturnValue(
 pub fn objc_autoreleasePoolPush(_env: &mut crate::Environment) -> MutVoidPtr {
     MutVoidPtr::from_bits(0)
 }
-    if name.is_null() {
-        return nil;
-    }
-
-    let name_str = match env.mem.cstr_at_utf8(name) {
-        Ok(s) => s.to_string(),
-        Err(_) => return nil,
-    };
-    if let Some(class) = env.objc.get_class(&name_str, false, &env.mem) {
-        return class;
-    }
-
-    if ObjC::find_template(&name_str).is_some() {
-        return env.objc.link_class(&name_str, false, &mut env.mem);
-    }
-
-    nil
-}
 
 pub fn objc_autoreleasePoolPop(_env: &mut crate::Environment, _context: MutVoidPtr) {
-    // touchHLE manages autorelease pools through NSAutoreleasePool objects, so
-    // the matching `objc_autoreleasePoolPush` is a no-op stub that returns
-    // nil, and there is nothing to drain here. iPhone OS 2.x/3.x apps target
-    // this path very rarely (it's primarily used by ARC).
+    // touchHLE manages autorelease pools through NSAutoreleasePool objects,
+    // so there is nothing to drain here.
 }
 
 pub fn class_getSuperclass(env: &mut crate::Environment, cls: Class) -> Class {
