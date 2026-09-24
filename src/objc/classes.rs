@@ -1344,7 +1344,9 @@ pub fn objc_retainAutoreleaseReturnValue(
     nil
 }
 
-pub fn objc_autoreleasePoolPush(env: &mut crate::Environment, name: ConstPtr<u8>) -> Class {
+pub fn objc_autoreleasePoolPush(_env: &mut crate::Environment) -> MutVoidPtr {
+    MutVoidPtr::from_bits(0)
+}
     if name.is_null() {
         return nil;
     }
