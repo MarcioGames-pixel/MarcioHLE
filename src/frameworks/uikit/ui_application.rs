@@ -662,15 +662,15 @@ pub(super) fn UIApplicationMain(
             }
 
             if delegate_class == nil {
-                delegate_class = find_app_delegate_class(env);
+    delegate_class = env
+        .objc
+        .try_get_known_class("AppDelegate", &mut env.mem)
+        .unwrap_or(nil);
+}
 
-                if delegate_class != nil {
-                    log!(
-                        "UIApplicationMain: no usable delegate class name was \
-                         provided; using discovered application delegate class."
-                    );
-                }
-            }
+if delegate_class == nil {
+    delegate_class = find_app_delegate_class(env);
+}
 
             if delegate_class != nil {
                 let delegate: id = msg![env; delegate_class new];
