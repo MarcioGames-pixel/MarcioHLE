@@ -1615,7 +1615,7 @@ Some(f)
                 symbol,
                 stub_function_ptr
             );
-           log_dbg!(
+           log!(
     "HOST CALL lazy-linked: symbol={} svc_pc={:#x} \
      r0={:#x} r1={:#x} r2={:#x} r3={:#x} \
      sp={:#x} lr={:#x} pc={:#x} cpsr={:#x}",
