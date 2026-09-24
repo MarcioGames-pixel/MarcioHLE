@@ -654,8 +654,11 @@ pub(super) fn UIApplicationMain(
             // the app stayed frozen on its launch image. Fall back to
             // discovering the app's delegate class from the loaded classes.
             let mut delegate_class: id = nil;
+
             if delegate_class_name != nil {
-                let name = ns_string::to_rust_string(env, delegate_class_name).into_owned();
+                let name =
+                    ns_string::to_rust_string(env, delegate_class_name).into_owned();
+
                 if !name.is_empty() {
                     delegate_class = env
                         .objc
@@ -663,8 +666,10 @@ pub(super) fn UIApplicationMain(
                         .unwrap_or(nil);
                 }
             }
+
             if delegate_class == nil {
                 delegate_class = find_app_delegate_class(env);
+
                 if delegate_class != nil {
                     log!(
                         "UIApplicationMain: no usable delegate class name was \
@@ -672,9 +677,13 @@ pub(super) fn UIApplicationMain(
                     );
                 }
             }
+
             if delegate_class != nil {
                 let delegate: id = msg![env; delegate_class new];
-                let _: () = msg![env; ui_application setDelegate:delegate];
+
+                if delegate != nil {
+                    let _: () = msg![env; ui_application setDelegate:delegate];
+                }
             } else {
                 log!(
                     "Warning: UIApplicationMain could not determine an \
