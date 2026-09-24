@@ -574,16 +574,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// neither is available, look through the loaded classes for one that declares
 /// a `UIApplicationDelegate` launch method and use that. Returns `nil` if no
 /// candidate is found.
-fn find_app_delegate_class(env: &Environment) -> id {
-    for sel_name in [
-        "application:didFinishLaunchingWithOptions:",
-        "applicationDidFinishLaunching:",
-    ] {
-        if let Some(class) = env.objc.class_declaring_instance_method(sel_name) {
-            return class;
-        }
-    }
-    nil
+fn find_app_delegate_class(env: &mut Environment) -> id {
+    env.objc
+        .try_get_known_class("AppDelegate", &mut env.mem)
+        .unwrap_or(nil)
 }
 
 /// `UIApplicationMain`, the entry point of the application.
