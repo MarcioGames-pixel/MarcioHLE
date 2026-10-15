@@ -297,21 +297,85 @@ fn CGImageCreateWithImageInRect(
     from_image(env, new_image)
 }
 
-/// Create an image masked by another image. We don't apply the mask —
-/// return a copy of the source so apps that read back pixels get something.
+/// Create an image masked by another image.
+///
+/// Our internal Image format stores premultiplied RGBA pixels. For a regular
+/// mask image, use its grayscale intensity as coverage; if the mask carries
+/// non-opaque alpha, combine that alpha with the grayscale coverage. This
+/// keeps the source's premultiplied color channels and scales both color and
+/// alpha together, avoiding bright fringes around transparent edges.
 fn CGImageCreateWithMask(
     env: &mut Environment,
     image: CGImageRef,
-    _mask: CGImageRef,
+    mask: CGImageRef,
 ) -> CGImageRef {
-    log!("CGImageCreateWithMask: mask not applied (stubbed)");
-    CGImageCreateCopy(env, image)
+    if image.is_null() || mask.is_null() {
+        return nil;
+    }
+
+    let (width, height) = env.objc.borrow::<CGImageHostObject>(image).image.dimensions();
+    let (mask_width, mask_height) = env.objc.borrow::<CGImageHostObject>(mask).image.dimensions();
+    if width == 0 || height == 0 || mask_width == 0 || mask_height == 0 {
+        return nil;
+    }
+
+    let source = env.objc.borrow::<CGImageHostObject>(image).image.pixels().to_vec();
+    let mask_pixels = env.objc.borrow::<CGImageHostObject>(mask).image.pixels().to_vec();
+    let mut output = source;
+
+    for y in 0..height as usize {
+        // Scale the mask to the source dimensions using nearest-neighbour
+        // sampling. Core Graphics normally expects matching dimensions, but
+        // this also avoids out-of-bounds access for imperfect app inputs.
+        let my = y * mask_height as usize / height as usize;
+        for x in 0..width as usize {
+            let mx = x * mask_width as usize / width as usize;
+            let mi = (my * mask_width as usize + mx) * 4;
+            let oi = (y * width as usize + x) * 4;
+            let r = mask_pixels[mi] as u32;
+            let g = mask_pixels[mi + 1] as u32;
+            let b = mask_pixels[mi + 2] as u32;
+            let alpha = mask_pixels[mi + 3] as u32;
+
+            // Luma approximation in sRGB. Alpha is only an additional
+            // coverage factor when it is actually present in the mask.
+            let luma = (r * 77 + g * 150 + b * 29 + 128) >> 8;
+            let coverage = if alpha < 255 {
+                luma * alpha / 255
+            } else {
+                luma
+            };
+            for channel in 0..4 {
+                output[oi + channel] =
+                    (output[oi + channel] as u32 * coverage / 255) as u8;
+            }
+        }
+    }
+
+    from_image(env, Image::from_pixels(width, height, output))
 }
 
-/// Invert-mask stub — just copy.
+/// Convert an image-mask representation to an alpha mask, preserving the
+/// source mask's dimensions. Darker mask samples become more opaque coverage.
 fn CGImageCreateMaskWithImageMask(env: &mut Environment, mask_image: CGImageRef) -> CGImageRef {
-    log!("CGImageCreateMaskWithImageMask: stubbed");
-    CGImageCreateCopy(env, mask_image)
+    if mask_image.is_null() {
+        return nil;
+    }
+
+    let (width, height) = env.objc.borrow::<CGImageHostObject>(mask_image).image.dimensions();
+    let pixels = env.objc.borrow::<CGImageHostObject>(mask_image).image.pixels().to_vec();
+    let mut output = vec![0u8; pixels.len()];
+
+    for (src, dst) in pixels.chunks_exact(4).zip(output.chunks_exact_mut(4)) {
+        let luma = (src[0] as u32 * 77 + src[1] as u32 * 150 + src[2] as u32 * 29 + 128) >> 8;
+        let coverage = 255 - luma;
+        dst[0] = 255;
+        dst[1] = 255;
+        dst[2] = 255;
+        dst[3] = coverage as u8;
+    }
+
+    from_image(env, Image::from_pixels(width, height, output))
 }
 
 // MARK: - Additional accessors
