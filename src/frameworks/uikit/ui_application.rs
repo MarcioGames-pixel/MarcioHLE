@@ -574,10 +574,16 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// neither is available, look through the loaded classes for one that declares
 /// a `UIApplicationDelegate` launch method and use that. Returns `nil` if no
 /// candidate is found.
-fn find_app_delegate_class(env: &mut Environment) -> id {
-    env.objc
-        .try_get_known_class("AppDelegate", &mut env.mem)
-        .unwrap_or(nil)
+fn find_app_delegate_class(env: &Environment) -> id {
+    for sel_name in [
+        "application:didFinishLaunchingWithOptions:",
+        "applicationDidFinishLaunching:",
+    ] {
+        if let Some(class) = env.objc.class_declaring_instance_method(sel_name) {
+            return class;
+        }
+    }
+    nil
 }
 
 /// `UIApplicationMain`, the entry point of the application.
@@ -662,15 +668,17 @@ pub(super) fn UIApplicationMain(
             }
 
             if delegate_class == nil {
-    delegate_class = env
-        .objc
-        .try_get_known_class("AppDelegate", &mut env.mem)
-        .unwrap_or(nil);
-}
+                // Some older apps use the conventional name but don't pass it
+                // through UIApplicationMain's delegateClassName argument.
+                delegate_class = env
+                    .objc
+                    .try_get_known_class("AppDelegate", &mut env.mem)
+                    .unwrap_or(nil);
+            }
 
-if delegate_class == nil {
-    delegate_class = find_app_delegate_class(env);
-}
+            if delegate_class == nil {
+                delegate_class = find_app_delegate_class(env);
+            }
 
             if delegate_class != nil {
                 let delegate: id = msg![env; delegate_class new];
