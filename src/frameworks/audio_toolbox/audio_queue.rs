@@ -223,6 +223,19 @@ pub fn AudioQueueNewOutput(
         }
     }
 
+    log!(
+        "DIAG AudioQueueNewOutput bundle={:?} format_id={:#010x} sample_rate={} channels={} bits_per_channel={} bytes_per_frame={} bytes_per_packet={} frames_per_packet={} flags={:#010x}",
+        env.bundle.bundle_identifier(),
+        format.format_id,
+        format.sample_rate,
+        format.channels_per_frame,
+        format.bits_per_channel,
+        format.bytes_per_frame,
+        format.bytes_per_packet,
+        format.frames_per_packet,
+        format.format_flags
+    );
+
     let host_object = AudioQueueHostObject {
         format,
         callback_proc: in_callback_proc,
@@ -481,7 +494,18 @@ pub fn AudioQueueEnqueueBuffer(
 
     host_object.buffer_queue.push_back(in_buffer);
 
-    log_dbg!("New buffer enqueued: {:?}", in_buffer);
+    let buffer_bytes = env.mem.read(in_buffer).audio_data_byte_size;
+    log_dbg!(
+        "DIAG AudioQueueEnqueueBuffer queue={:?} buffer={:?} bytes={} queue_depth={} format_id={:#010x} sample_rate={} channels={} bits={}",
+        in_aq,
+        in_buffer,
+        buffer_bytes,
+        host_object.buffer_queue.len(),
+        host_object.format.format_id,
+        host_object.format.sample_rate,
+        host_object.format.channels_per_frame,
+        host_object.format.bits_per_channel
+    );
 
     0 // success
 }
