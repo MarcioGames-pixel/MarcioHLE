@@ -30,6 +30,18 @@ struct FILEHostObject {
     pushbacks: Vec<u8>,
     /// `ferror()` implementation
     error: bool,
+    /// Path for opt-in diagnostic tracing of archive and temporary-file I/O.
+    trace_path: Option<String>,
+}
+
+fn should_trace_stdio_path(path: &str) -> bool {
+    let path = path.to_ascii_lowercase();
+    [
+        "extract", "animation", "/tmp/", "/temp/", ".7z", ".zip", ".tar",
+        ".pak", ".obb", ".dat", ".bin",
+    ]
+    .iter()
+    .any(|needle| path.contains(needle))
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -87,6 +99,7 @@ impl State {
             FILEHostObject {
                     pushbacks: Vec::new(),
                     error: false,
+                    trace_path: None,
                 }
         });
         self.file_streams.get_mut(&file_ptr).unwrap()
@@ -104,6 +117,13 @@ fn fopen(env: &mut Environment, filename: ConstPtr<u8>, mode: ConstPtr<u8>) -> M
     // a known basic mode (r/w/a) to come first.
 
     let mode = env.mem.cstr_at(mode);
+    let mode_for_log = String::from_utf8_lossy(mode).into_owned();
+    let path_for_log = env
+        .mem
+        .cstr_at_utf8(filename)
+        .map(str::to_owned)
+        .unwrap_or_else(|_| "<non-UTF-8 path>".to_owned());
+    let trace_path = should_trace_stdio_path(&path_for_log).then(|| path_for_log.clone());
     let [basic_mode @ (b'r' | b'w' | b'a'), flags @ ..] = mode else {
         // Real Apple libc returns NULL + EINVAL for malformed modes. Match
         // that behaviour instead of taking down the host.
@@ -146,8 +166,21 @@ fn fopen(env: &mut Environment, filename: ConstPtr<u8>, mode: ConstPtr<u8>) -> M
     };
 
     match posix_io::open_direct(env, filename, flags) {
-        -1 => Ptr::null(),
+        -1 => {
+            log!(
+                "DIAG stdio fopen FAILED path={:?} mode={:?}",
+                path_for_log,
+                mode_for_log
+            );
+            Ptr::null()
+        }
         fd => {
+            log!(
+                "DIAG stdio fopen path={:?} mode={:?} fd={}",
+                path_for_log,
+                mode_for_log,
+                fd
+            );
             let res = env.mem.alloc_and_write(FILE { fd });
             // Без заглушек: игры часто грешат тем, что вызывают free() на
             // указатель FILE*,
@@ -162,6 +195,7 @@ fn fopen(env: &mut Environment, filename: ConstPtr<u8>, mode: ConstPtr<u8>) -> M
                 FILEHostObject {
                     pushbacks: Vec::new(),
                     error: false,
+                    trace_path: trace_path.clone(),
                 },
             );
             res
@@ -272,10 +306,18 @@ fn fread(
         return 0;
     }
 
+    let trace_path = env
+        .libc_state
+        .stdio
+        .get_file_host_obj_mut(&mut env.mem, file_ptr)
+        .trace_path
+        .clone();
+
     // Yes, the item_size/n_items split doesn't mean anything. The C standard
     // really does expect you to just multiply and divide like this, with no
     // attempt being made to ensure a whole number are read or written!
     let mut total_size = item_size.checked_mul(n_items).unwrap();
+    let requested_size = total_size;
     let FILEHostObject {
         ref mut pushbacks, ..
     } = env
@@ -294,6 +336,13 @@ fn fread(
         pushbacks.truncate(offset);
 
         if total_size == to_copy {
+            if let Some(path) = &trace_path {
+                log_dbg!(
+                    "DIAG stdio fread path={:?} satisfied from pushback: {} bytes",
+                    path,
+                    requested_size
+                );
+            }
             return total_size;
         }
         total_size -= to_copy;
@@ -306,6 +355,14 @@ fn fread(
     let FILE { fd } = env.mem.read(file_ptr);
     match posix_io::read(env, fd, buffer, total_size) {
         -1 => {
+            if let Some(path) = &trace_path {
+                log!(
+                    "DIAG stdio fread FAILED path={:?} fd={} requested_bytes={}",
+                    path,
+                    fd,
+                    total_size
+                );
+            }
             env.libc_state
                 .stdio
                 .get_file_host_obj_mut(&mut env.mem, file_ptr)
@@ -314,6 +371,16 @@ fn fread(
         }
         bytes_read => {
             let bytes_read: GuestUSize = bytes_read.try_into().unwrap();
+            if let Some(path) = &trace_path {
+                log_dbg!(
+                    "DIAG stdio fread path={:?} fd={} requested_bytes={} read_bytes={} items={}",
+                    path,
+                    fd,
+                    requested_size,
+                    bytes_read + already_read,
+                    (bytes_read + already_read) / item_size
+                );
+            }
             (bytes_read + already_read) / item_size
         }
     }
@@ -509,9 +576,26 @@ fn fseeko(env: &mut Environment, file_ptr: MutPtr<FILE>, offset: off_t, whence: 
     set_errno(env, 0);
 
     let FILE { fd } = env.mem.read(file_ptr);
+    let trace_path = env
+        .libc_state
+        .stdio
+        .get_file_host_obj_mut(&mut env.mem, file_ptr)
+        .trace_path
+        .clone();
 
     assert!([SEEK_SET, SEEK_CUR, SEEK_END].contains(&whence));
-    match posix_io::lseek(env, fd, offset, whence) {
+    let seek_result = posix_io::lseek(env, fd, offset, whence);
+    if let Some(path) = &trace_path {
+        log_dbg!(
+            "DIAG stdio fseek path={:?} fd={} offset={} whence={} result={}",
+            path,
+            fd,
+            offset,
+            whence,
+            seek_result
+        );
+    }
+    match seek_result {
         -1 => -1,
         _cur_pos => {
             let FILEHostObject {
@@ -535,7 +619,22 @@ fn ftello(env: &mut Environment, file_ptr: MutPtr<FILE>) -> off_t {
     set_errno(env, 0);
 
     let FILE { fd } = env.mem.read(file_ptr);
-    posix_io::lseek(env, fd, 0, posix_io::SEEK_CUR)
+    let trace_path = env
+        .libc_state
+        .stdio
+        .get_file_host_obj_mut(&mut env.mem, file_ptr)
+        .trace_path
+        .clone();
+    let position = posix_io::lseek(env, fd, 0, posix_io::SEEK_CUR);
+    if let Some(path) = &trace_path {
+        log_dbg!(
+            "DIAG stdio ftell path={:?} fd={} position={}",
+            path,
+            fd,
+            position
+        );
+    }
+    position
 }
 
 fn rewind(env: &mut Environment, file_ptr: MutPtr<FILE>) {
@@ -568,6 +667,15 @@ fn fclose(env: &mut Environment, file_ptr: MutPtr<FILE>) -> i32 {
         .get_file_host_obj_mut(&mut env.mem, file_ptr);
 
     let FILE { fd } = env.mem.read(file_ptr);
+    let trace_path = env
+        .libc_state
+        .stdio
+        .file_streams
+        .get(&file_ptr)
+        .and_then(|host| host.trace_path.clone());
+    if let Some(path) = &trace_path {
+        log!("DIAG stdio fclose path={:?} fd={}", path, fd);
+    }
     if matches!(fd, STDIN_FILENO | STDOUT_FILENO | STDERR_FILENO) {
         log!(
             "Warning! fclose({:?}) is called for standard descriptor {}.",
