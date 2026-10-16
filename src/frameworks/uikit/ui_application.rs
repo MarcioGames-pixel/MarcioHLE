@@ -602,6 +602,22 @@ pub(super) fn UIApplicationMain(
     principal_class_name: id, // NSString*
     delegate_class_name: id,  // NSString*
 ) {
+    let principal_name_for_log = if principal_class_name != nil {
+        ns_string::to_rust_string(env, principal_class_name).into_owned()
+    } else {
+        "<nil>".to_owned()
+    };
+    let delegate_name_for_log = if delegate_class_name != nil {
+        ns_string::to_rust_string(env, delegate_class_name).into_owned()
+    } else {
+        "<nil>".to_owned()
+    };
+    log!(
+        "DIAG UIApplicationMain begin principal_class={:?} delegate_class={:?}",
+        principal_name_for_log,
+        delegate_name_for_log
+    );
+
     let ui_application = {
         let pool: id = msg_class![env; NSAutoreleasePool new];
 
@@ -693,6 +709,12 @@ pub(super) fn UIApplicationMain(
             }
         };
 
+        let resolved_delegate: id = msg![env; ui_application delegate];
+        log!(
+            "DIAG UIApplicationMain delegate resolution complete: {}",
+            if resolved_delegate == nil { "nil" } else { "non-nil" }
+        );
+
         // UIMainStoryboardFile (iOS 5+) replaces NSMainNibFile for modern
         // apps. When present, the documented launch flow is:
         //   1. Load the named storyboard.
@@ -758,14 +780,20 @@ pub(super) fn UIApplicationMain(
             delegate,
             "application:didFinishLaunchingWithOptions:",
         ) {
+            log!("DIAG UIApplicationMain invoking application:didFinishLaunchingWithOptions:");
             let empty_dict: id = msg_class![env; NSDictionary dictionary];
             () = msg![env; delegate application:ui_application didFinishLaunchingWithOptions:empty_dict];
+            log!("DIAG UIApplicationMain launch callback returned");
         } else if env.objc.object_has_method_named(
             &env.mem,
             delegate,
             "applicationDidFinishLaunching:",
         ) {
+            log!("DIAG UIApplicationMain invoking applicationDidFinishLaunching:");
             () = msg![env; delegate applicationDidFinishLaunching:ui_application];
+            log!("DIAG UIApplicationMain launch callback returned");
+        } else {
+            log!("DIAG UIApplicationMain delegate has no recognized launch callback");
         }
 
         let center: id = msg_class![env; NSNotificationCenter defaultCenter];
