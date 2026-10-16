@@ -2575,6 +2575,16 @@ fn xmlMemoryDump(_env: &mut Environment) -> i32 {
     unsafe { xml::xmlMemoryDump() }
 }
 
+/// `void xmlInitParser(void)` — initialize the libxml2 parser globals.
+/// Older iOS apps call this explicitly during startup. The wrapper performs
+/// its own one-time host initialization, then this forwards the guest request
+/// to libxml2 rather than letting dyld install an unimplemented return stub.
+#[allow(non_snake_case)]
+fn xmlInitParser(_env: &mut Environment) {
+    xml::init_once();
+    unsafe { xml::xmlInitParser() };
+}
+
 /// `int xmlInitMemory(void)` — initialises libxml2's allocator
 /// overrides. The function is deprecated upstream (the allocator
 /// table is now initialised on first use), but iOS 5/6 apps built
@@ -2719,6 +2729,7 @@ const FUNCTIONS: FunctionExports = &[
     export_c_func!(xmlCreatePushParserCtxt(_, _, _, _, _)),
     export_c_func!(xmlParseChunk(_, _, _, _)),
     export_c_func!(xmlCheckVersion(_)),
+    export_c_func!(xmlInitParser()),
     export_c_func!(xmlSAXUserParseMemory(_, _, _, _)),
     export_c_func!(xmlMemoryDump()),
     export_c_func!(xmlInitMemory()),

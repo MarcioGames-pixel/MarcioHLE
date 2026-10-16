@@ -29,12 +29,14 @@ use crate::mem::MutPtr;
 use crate::objc::{id, msg_class};
 use crate::Environment;
 
-const DUMMY_STREAM: u32 = 0xC0F0_0001;
-
-fn CFReadStreamCreateForHTTPRequest(_env: &mut Environment, _alloc: u32, _request: u32) -> u32 {
-    // Return a non-null dummy handle so callers that only check for null
-    // continue past the nil check.
-    DUMMY_STREAM
+fn CFReadStreamCreateForHTTPRequest(env: &mut Environment, _alloc: u32, _request: u32) -> u32 {
+    // A magic integer is not a valid Core Foundation/Objective-C object: apps
+    // may pass a stream through CFMakeCollectable or send it Objective-C
+    // messages, which then triggers a nil-isa/use-after-free warning. Return a
+    // real NSObject as a safe placeholder instead. The stream functions below
+    // still report an empty stream because network transport is not emulated.
+    let stream: id = msg_class![env; NSObject new];
+    stream.to_bits()
 }
 
 fn CFReadStreamOpen(_env: &mut Environment, _stream: u32) -> bool {
