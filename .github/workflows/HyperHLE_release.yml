@@ -22,7 +22,9 @@ concurrency:
 
 jobs:
   build-osx:
-    runs-on: macos-latest  
+    # Build x86_64 natively: macos-latest can select Apple Silicon, which
+    # cross-builds the Rust target but still compiles Dynarmic's C++ natively.
+    runs-on: macos-15-intel  
 
     steps:  
       - name: Checkout touchHLE
