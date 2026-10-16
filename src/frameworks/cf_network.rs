@@ -36,7 +36,7 @@ fn CFReadStreamCreateForHTTPRequest(env: &mut Environment, _alloc: u32, _request
     // real NSObject as a safe placeholder instead. The stream functions below
     // still report an empty stream because network transport is not emulated.
     let stream: id = msg_class![env; NSObject new];
-    stream
+    stream.to_bits()
 }
 
 fn CFReadStreamOpen(_env: &mut Environment, _stream: u32) -> bool {
