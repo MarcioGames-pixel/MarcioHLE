@@ -223,6 +223,29 @@ pub fn AudioQueueNewOutput(
         }
     }
 
+    // AudioStreamBasicDescription is packed, so copy its fields to aligned
+    // locals before passing them to formatting macros.
+    let diag_format_id = format.format_id;
+    let diag_sample_rate = format.sample_rate;
+    let diag_channels = format.channels_per_frame;
+    let diag_bits = format.bits_per_channel;
+    let diag_bytes_per_frame = format.bytes_per_frame;
+    let diag_bytes_per_packet = format.bytes_per_packet;
+    let diag_frames_per_packet = format.frames_per_packet;
+    let diag_flags = format.format_flags;
+    log!(
+        "DIAG AudioQueueNewOutput bundle={:?} format_id={:#010x} sample_rate={} channels={} bits_per_channel={} bytes_per_frame={} bytes_per_packet={} frames_per_packet={} flags={:#010x}",
+        env.bundle.bundle_identifier(),
+        diag_format_id,
+        diag_sample_rate,
+        diag_channels,
+        diag_bits,
+        diag_bytes_per_frame,
+        diag_bytes_per_packet,
+        diag_frames_per_packet,
+        diag_flags
+    );
+
     let host_object = AudioQueueHostObject {
         format,
         callback_proc: in_callback_proc,
@@ -481,7 +504,23 @@ pub fn AudioQueueEnqueueBuffer(
 
     host_object.buffer_queue.push_back(in_buffer);
 
-    log_dbg!("New buffer enqueued: {:?}", in_buffer);
+    let buffer_bytes = env.mem.read(in_buffer).audio_data_byte_size;
+    // Copy packed format fields to aligned locals before formatting.
+    let diag_format_id = host_object.format.format_id;
+    let diag_sample_rate = host_object.format.sample_rate;
+    let diag_channels = host_object.format.channels_per_frame;
+    let diag_bits = host_object.format.bits_per_channel;
+    log_dbg!(
+        "DIAG AudioQueueEnqueueBuffer queue={:?} buffer={:?} bytes={} queue_depth={} format_id={:#010x} sample_rate={} channels={} bits={}",
+        in_aq,
+        in_buffer,
+        buffer_bytes,
+        host_object.buffer_queue.len(),
+        diag_format_id,
+        diag_sample_rate,
+        diag_channels,
+        diag_bits
+    );
 
     0 // success
 }
