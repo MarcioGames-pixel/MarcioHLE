@@ -781,14 +781,15 @@ pub(super) fn UIApplicationMain(
         for window in windows {
             let hidden: bool = msg![env; window isHidden];
             let root_view_controller: id = msg![env; window rootViewController];
-            let subviews = env.objc.borrow::<crate::frameworks::uikit::ui_view::UIViewHostObject>(window).subviews.len();
+            let subviews: id = msg![env; window subviews];
+            let subview_count: crate::frameworks::foundation::NSUInteger = msg![env; subviews count];
             log!(
                 "DIAG UIKit window={:?} hidden={} is_key={} root_view_controller={:?} subviews={}",
                 window,
                 hidden,
                 key_window == Some(window),
                 root_view_controller,
-                subviews,
+                subview_count,
             );
         }
 
