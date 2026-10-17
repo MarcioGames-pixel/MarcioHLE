@@ -297,6 +297,13 @@ pub fn sqlite3_prepare_v2(
         }
     };
     clear_error(p_db);
+    log!(
+        "DIAG libsqlite3: prepare metadata db={:#x} columns={} names={:?} sql={:?}",
+        p_db,
+        column_count,
+        column_names,
+        &sql[..sql.len().min(180)]
+    );
 
     let stmt_handle = alloc_handle();
     SQLITE_STATEMENTS.lock().unwrap().insert(
@@ -321,6 +328,10 @@ pub fn sqlite3_prepare_v2(
         let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
         env.mem.write(p, stmt_handle);
     }
+    log!(
+        "DIAG libsqlite3: prepare success db={:#x} stmt={:#x} column_count={}",
+        p_db, stmt_handle, column_count
+    );
     SQLITE_OK
 }
 
@@ -440,6 +451,7 @@ pub fn sqlite3_bind_null(_env: &mut Environment, stmt: u32, index: i32) -> u32 {
 
 // ---------- sqlite3_step ----------
 pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
+    log!("DIAG libsqlite3: sqlite3_step(stmt={:#x})", stmt_handle);
     let (db_handle, sql, bindings, executed) = {
         let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
         let entry = match stmts.get_mut(&stmt_handle) {
@@ -451,19 +463,35 @@ pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
             if entry.next_row < entry.result_rows.len() {
                 entry.columns = entry.result_rows[entry.next_row].clone();
                 entry.next_row += 1;
+                let row_num = entry.next_row;
+                let col_count = entry.columns.len();
+                let sql = entry.sql.clone();
                 clear_error(entry.db_handle);
+                log!("DIAG libsqlite3: step stmt={:#x} => SQLITE_ROW row={} columns={} sql={:?}", stmt_handle, row_num, col_count, &sql[..sql.len().min(100)]);
                 return SQLITE_ROW;
             }
             entry.columns.clear();
             entry.done = true;
             clear_error(entry.db_handle);
+            log!("DIAG libsqlite3: step stmt={:#x} => SQLITE_DONE (already executed)", stmt_handle);
             return SQLITE_DONE;
         }
 
         (entry.db_handle, entry.sql.clone(), entry.bindings.clone(), entry.executed)
     };
 
+    log!(
+        "DIAG libsqlite3: stepping stmt={:#x} db={:#x} sql={:?} bindings={}",
+        stmt_handle,
+        db_handle,
+        &sql[..sql.len().min(180)],
+        bindings.len()
+    );
     if executed {
+        log!(
+            "DIAG libsqlite3: stmt={:#x} already executed; returning SQLITE_DONE",
+            stmt_handle
+        );
         return SQLITE_DONE;
     }
 
@@ -593,6 +621,28 @@ pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
             entry.executed = true;
             entry.done = entry.result_rows.is_empty();
             let status = if entry.done { SQLITE_DONE } else { SQLITE_ROW };
+            let row_count = entry.result_rows.len();
+            let current_columns = entry.columns.len();
+            log!(
+                "DIAG libsqlite3: step stmt={:#x} result={} rows_materialized={} current_columns={} sql={:?}",
+                stmt_handle,
+                if status == SQLITE_ROW { "SQLITE_ROW" } else { "SQLITE_DONE" },
+                row_count,
+                current_columns,
+                &entry.sql[..entry.sql.len().min(100)]
+            );
+            if entry.sql.to_ascii_lowercase().contains("pragma table_info") {
+                for (row_idx, row) in entry.result_rows.iter().enumerate() {
+                    let values = row.iter().map(|v| match v {
+                        ColumnValue::Int(n) => format!("int:{n}"),
+                        ColumnValue::Double(n) => format!("real:{n}"),
+                        ColumnValue::Text(s) => format!("text:{:?}", s),
+                        ColumnValue::Blob(b) => format!("blob:{}bytes", b.len()),
+                        ColumnValue::Null => "NULL".to_string(),
+                    }).collect::<Vec<_>>();
+                    log!("DIAG libsqlite3: table_info row={} values={:?}", row_idx, values);
+                }
+            }
             clear_error(db_handle);
             status
         } else {
@@ -642,10 +692,12 @@ pub fn sqlite3_finalize(_env: &mut Environment, stmt_handle: u32) -> u32 {
 // ---------- sqlite3_column_count ----------
 pub fn sqlite3_column_count(_env: &mut Environment, stmt_handle: u32) -> i32 {
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get(&stmt_handle) {
+    let count = match stmts.get(&stmt_handle) {
         Some(entry) => entry.column_count as i32,
         None => 0,
-    }
+    };
+    log!("DIAG libsqlite3: sqlite3_column_count(stmt={:#x}) => {}", stmt_handle, count);
+    count
 }
 
 // ---------- sqlite3_column_int ----------
@@ -701,7 +753,12 @@ pub fn sqlite3_column_text(env: &mut Environment, stmt_handle: u32, col: i32) ->
                 Some(ColumnValue::Text(v)) => v.clone(),
                 Some(ColumnValue::Int(v)) => format!("{}", v),
                 Some(ColumnValue::Double(v)) => format!("{}", v),
-                _ => return 0,
+                Some(ColumnValue::Blob(v)) => String::from_utf8_lossy(v).into_owned(),
+                Some(ColumnValue::Null) => return 0,
+                None => {
+                    log!("DIAG libsqlite3: column_text invalid column stmt={:#x} col={} available={}", stmt_handle, col, entry.columns.len());
+                    return 0;
+                }
             },
             None => return 0,
         }
@@ -722,17 +779,28 @@ pub fn sqlite3_column_text(env: &mut Environment, stmt_handle: u32, col: i32) ->
 
 // ---------- sqlite3_column_bytes ----------
 pub fn sqlite3_column_bytes(_env: &mut Environment, stmt_handle: u32, col: i32) -> i32 {
+    // sqlite3_column_bytes() reports the byte length of the value's current
+    // text representation when SQLite converts a numeric value to text. It
+    // does not report the in-memory size of an i32/f64. Keep this consistent
+    // with sqlite3_column_text(), which formats numeric values as strings.
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get(&stmt_handle) {
+    let result = match stmts.get(&stmt_handle) {
         Some(entry) => match entry.columns.get(col as usize) {
-            Some(ColumnValue::Text(v)) => v.len() as i32,
-            Some(ColumnValue::Blob(v)) => v.len() as i32,
-            Some(ColumnValue::Int(_)) => 4,
-            Some(ColumnValue::Double(_)) => 8,
+            Some(ColumnValue::Text(v)) => v.len().min(i32::MAX as usize) as i32,
+            Some(ColumnValue::Blob(v)) => v.len().min(i32::MAX as usize) as i32,
+            Some(ColumnValue::Int(v)) => v.to_string().len() as i32,
+            Some(ColumnValue::Double(v)) => v.to_string().len() as i32,
             _ => 0,
         },
         None => 0,
-    }
+    };
+    log!(
+        "DIAG libsqlite3: sqlite3_column_bytes(stmt={:#x}, col={}) => {}",
+        stmt_handle,
+        col,
+        result
+    );
+    result
 }
 
 // ---------- sqlite3_column_type ----------
@@ -790,6 +858,7 @@ pub fn sqlite3_column_name(env: &mut Environment, stmt_handle: u32, col: i32) ->
     if let Some(p) = cached {
         // Cached entry from a previous call. The SQLite contract
         // guarantees the pointer is stable until the next step/finalize.
+        log!("DIAG libsqlite3: sqlite3_column_name(stmt={:#x}, col={}) cached_ptr={:#x} name={:?}", stmt_handle, col, p, name);
         return p;
     }
 
@@ -809,6 +878,7 @@ pub fn sqlite3_column_name(env: &mut Environment, stmt_handle: u32, col: i32) ->
     if let Some(entry) = stmts.get_mut(&stmt_handle) {
         entry.column_name_ptrs.insert(col, base);
     }
+    log!("DIAG libsqlite3: sqlite3_column_name(stmt={:#x}, col={}) => ptr={:#x} name={:?}", stmt_handle, col, base, name);
     base
 }
 

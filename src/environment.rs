@@ -1901,16 +1901,23 @@ impl Environment {
                 };
 
                 if count == 1 || count % LOG_RATE == 0 {
+                    let regs = self.cpu.regs();
                     log_no_panic!(
                         "Warning: Ignored UndefinedInstruction at {:#x}. \
                          Faking function return to LR ({:#x}) to bypass crash! \
                          cpsr={:#x} thumb={} instruction_len={} \
-                         (occurrence {} of at most {})",
+                         r0={:#010x} r1={:#010x} r2={:#010x} r3={:#010x} \
+                         sp={:#010x} (occurrence {} of at most {})",
                         pc,
                         lr,
                         self.cpu.cpsr(),
                         (self.cpu.cpsr() & cpu::Cpu::CPSR_THUMB) != 0,
                         instruction_len,
+                        regs[0],
+                        regs[1],
+                        regs[2],
+                        regs[3],
+                        regs[13],
                         count,
                         BYPASS_LIMIT
                     );
