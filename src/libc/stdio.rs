@@ -787,11 +787,66 @@ fn clearerr(env: &mut Environment, file_ptr: MutPtr<FILE>) {
 }
 
 fn fflush(env: &mut Environment, file_ptr: MutPtr<FILE>) -> i32 {
-    // TODO: handle errno properly
     set_errno(env, 0);
 
+    // ISO C / Apple libc: fflush(NULL) flushes every open output stream.
+    // Do not dereference NULL as though it were a FILE structure.
+    if file_ptr.is_null() {
+        let stream_ptrs: Vec<MutPtr<FILE>> =
+            env.libc_state.stdio.file_streams.keys().copied().collect();
+        let mut fds = Vec::with_capacity(stream_ptrs.len());
+        for ptr in stream_ptrs {
+            // A tracked FILE* may have become invalid if guest code freed it
+            // directly; keep this diagnostic path conservative.
+            if ptr.is_null() {
+                continue;
+            }
+            let FILE { fd } = env.mem.read(ptr);
+            if fd != STDIN_FILENO && !fds.contains(&fd) {
+                fds.push(fd);
+            }
+        }
+
+        let mut failed = false;
+        if std::io::stdout().flush().is_err() {
+            failed = true;
+        }
+        if std::io::stderr().flush().is_err() {
+            failed = true;
+        }
+        for fd in fds {
+            if fd == STDOUT_FILENO || fd == STDERR_FILENO {
+                continue;
+            }
+            if posix_io::fflush(env, fd) != 0 {
+                failed = true;
+                log!("DIAG stdio fflush(NULL): flush failed for fd {}", fd);
+            }
+        }
+
+        let result = if failed { EOF } else { 0 };
+        log!(
+            "DIAG stdio fflush(NULL): flushed tracked output streams; result={}",
+            result
+        );
+        return result;
+    }
+
     let FILE { fd } = env.mem.read(file_ptr);
-    posix_io::fflush(env, fd)
+    let result = if fd == STDOUT_FILENO {
+        if std::io::stdout().flush().is_ok() { 0 } else { EOF }
+    } else if fd == STDERR_FILENO {
+        if std::io::stderr().flush().is_ok() { 0 } else { EOF }
+    } else {
+        posix_io::fflush(env, fd)
+    };
+    log!(
+        "DIAG stdio fflush({:?}): fd={} result={}",
+        file_ptr,
+        fd,
+        result
+    );
+    result
 }
 
 fn puts(env: &mut Environment, s: ConstPtr<u8>) -> i32 {
