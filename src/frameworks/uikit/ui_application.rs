@@ -768,6 +768,30 @@ pub(super) fn UIApplicationMain(
             () = msg![env; delegate applicationDidFinishLaunching:ui_application];
         }
 
+        // Diagnose apps that return from their launch delegate but remain on a black screen.
+        // Do not create a synthetic window here: first record the actual UIKit state.
+        let windows = env.framework_state.uikit.ui_view.ui_window.windows.clone();
+        let key_window = env.framework_state.uikit.ui_view.ui_window.key_window;
+        log!(
+            "DIAG UIApplicationMain after launch callback: windows={}, key_window={:?}, views={}",
+            windows.len(),
+            key_window,
+            env.framework_state.uikit.ui_view.views.len(),
+        );
+        for window in windows {
+            let hidden: bool = msg![env; window isHidden];
+            let root_view_controller: id = msg![env; window rootViewController];
+            let subviews = env.objc.borrow::<crate::frameworks::uikit::ui_view::UIViewHostObject>(window).subviews.len();
+            log!(
+                "DIAG UIKit window={:?} hidden={} is_key={} root_view_controller={:?} subviews={}",
+                window,
+                hidden,
+                key_window == Some(window),
+                root_view_controller,
+                subviews,
+            );
+        }
+
         let center: id = msg_class![env; NSNotificationCenter defaultCenter];
         let notif_name = get_static_str(env, UIApplicationDidFinishLaunchingNotification);
         () = msg![env; center postNotificationName:notif_name object:ui_application userInfo:nil];
@@ -776,8 +800,21 @@ pub(super) fn UIApplicationMain(
     }
 
     let views = env.framework_state.uikit.ui_view.views.clone();
+    log!("DIAG UIKit layout pass: {} registered views", views.len());
     for view in views {
         () = msg![env; view layoutSubviews];
+    }
+    if let Some(window) = env.framework_state.uikit.ui_view.ui_window.key_window {
+        let hidden: bool = msg![env; window isHidden];
+        let bounds: CGRect = msg![env; window bounds];
+        log!(
+            "DIAG UIKit after layout: key_window={:?} hidden={} bounds={:?}",
+            window,
+            hidden,
+            bounds,
+        );
+    } else {
+        log!("DIAG UIKit after layout: no key window");
     }
 
     {
