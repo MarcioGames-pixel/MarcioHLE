@@ -692,10 +692,12 @@ pub fn sqlite3_finalize(_env: &mut Environment, stmt_handle: u32) -> u32 {
 // ---------- sqlite3_column_count ----------
 pub fn sqlite3_column_count(_env: &mut Environment, stmt_handle: u32) -> i32 {
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get(&stmt_handle) {
+    let count = match stmts.get(&stmt_handle) {
         Some(entry) => entry.column_count as i32,
         None => 0,
-    }
+    };
+    log!("DIAG libsqlite3: sqlite3_column_count(stmt={:#x}) => {}", stmt_handle, count);
+    count
 }
 
 // ---------- sqlite3_column_int ----------
@@ -856,6 +858,7 @@ pub fn sqlite3_column_name(env: &mut Environment, stmt_handle: u32, col: i32) ->
     if let Some(p) = cached {
         // Cached entry from a previous call. The SQLite contract
         // guarantees the pointer is stable until the next step/finalize.
+        log!("DIAG libsqlite3: sqlite3_column_name(stmt={:#x}, col={}) cached_ptr={:#x} name={:?}", stmt_handle, col, p, name);
         return p;
     }
 
@@ -875,6 +878,7 @@ pub fn sqlite3_column_name(env: &mut Environment, stmt_handle: u32, col: i32) ->
     if let Some(entry) = stmts.get_mut(&stmt_handle) {
         entry.column_name_ptrs.insert(col, base);
     }
+    log!("DIAG libsqlite3: sqlite3_column_name(stmt={:#x}, col={}) => ptr={:#x} name={:?}", stmt_handle, col, base, name);
     base
 }
 
