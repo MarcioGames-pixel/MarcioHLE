@@ -24,6 +24,9 @@ struct StmtEntry {
     sql: String,
     bindings: HashMap<usize, BindValue>,
     columns: Vec<ColumnValue>,
+    /// Number of result columns in the prepared statement, independent of whether
+    /// sqlite3_step has produced a row yet (SQLite API contract).
+    column_count: usize,
     /// Column names as reported by SQLite for the current prepared statement.
     /// Populated lazily on first call to `sqlite3_column_name` (matching real
     /// SQLite's `sqlite3_column_name` contract:
@@ -245,12 +248,15 @@ pub fn sqlite3_prepare_v2(
         &sql[..sql.len().min(120)]
     );
 
-        // Validate SQL by trying to prepare it safely without locking references
+        // Capture the result-column count while preparing. SQLite's
+    // sqlite3_column_count() returns this even before the first sqlite3_step().
     let mut valid = false;
+    let mut column_count = 0usize;
     {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
         if let Some(conn) = handles.get(&p_db) {
-            if conn.prepare(&sql).is_ok() {
+            if let Ok(stmt) = conn.prepare(&sql) {
+                column_count = stmt.column_count();
                 valid = true;
             }
         }
@@ -292,6 +298,7 @@ pub fn sqlite3_prepare_v2(
             sql,
             bindings: HashMap::new(),
             columns: Vec::new(),
+            column_count,
             column_names: Vec::new(),
             column_name_ptrs: HashMap::new(),
             done: false,
@@ -595,7 +602,7 @@ pub fn sqlite3_finalize(_env: &mut Environment, stmt_handle: u32) -> u32 {
 pub fn sqlite3_column_count(_env: &mut Environment, stmt_handle: u32) -> i32 {
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
     match stmts.get(&stmt_handle) {
-        Some(entry) => entry.columns.len() as i32,
+        Some(entry) => entry.column_count as i32,
         None => 0,
     }
 }
