@@ -17,6 +17,7 @@ lazy_static::lazy_static! {
     static ref SQLITE_STATEMENTS: Mutex<HashMap<u32, StmtEntry>> = Mutex::new(HashMap::new());
     static ref NEXT_HANDLE: Mutex<u32> = Mutex::new(0x8000_0000);
     static ref LAST_ERROR: Mutex<HashMap<u32, String>> = Mutex::new(HashMap::new());
+    static ref LAST_CHANGES: Mutex<HashMap<u32, i32>> = Mutex::new(HashMap::new());
 }
 
 struct StmtEntry {
@@ -24,6 +25,13 @@ struct StmtEntry {
     sql: String,
     bindings: HashMap<usize, BindValue>,
     columns: Vec<ColumnValue>,
+    /// Number of columns in the prepared result set, independent of row state.
+    column_count: usize,
+    /// Materialized rows let sqlite3_step advance instead of returning the first
+    /// row repeatedly after rebuilding the rusqlite statement on every call.
+    result_rows: Vec<Vec<ColumnValue>>,
+    next_row: usize,
+    executed: bool,
     /// Column names as reported by SQLite for the current prepared statement.
     /// Populated lazily on first call to `sqlite3_column_name` (matching real
     /// SQLite's `sqlite3_column_name` contract:
@@ -83,6 +91,10 @@ fn alloc_handle() -> u32 {
 
 fn set_error(db_handle: u32, msg: String) {
     LAST_ERROR.lock().unwrap().insert(db_handle, msg);
+}
+
+fn clear_error(db_handle: u32) {
+    LAST_ERROR.lock().unwrap().remove(&db_handle);
 }
 
 // ---------- sqlite3_open ----------
@@ -245,44 +257,42 @@ pub fn sqlite3_prepare_v2(
         &sql[..sql.len().min(120)]
     );
 
-        // Validate SQL by trying to prepare it safely without locking references
-    let mut valid = false;
-    {
+        // Preparing a statement must never execute it. Capture the result-set
+    // metadata now, because sqlite3_column_count/name are valid before step().
+    let (column_count, column_names) = {
         let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        if let Some(conn) = handles.get(&p_db) {
-            if conn.prepare(&sql).is_ok() {
-                valid = true;
+        let conn = match handles.get(&p_db) {
+            Some(conn) => conn,
+            None => {
+                set_error(p_db, "no such connection".into());
+                if pp_stmt != 0 {
+                    let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
+                    env.mem.write(p, 0u32);
+                }
+                return SQLITE_MISUSE;
             }
-        }
-    }
-
-    // CORREÇÃO REAL: Se falhar mas for um comando estrutural do Unity (savepoint/PRAGMA),
-    // executamos diretamente no banco de dados real para salvar as tabelas fisicamente.
-    if !valid && (sql.contains("savepoint") || sql.contains("PRAGMA")) {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        if let Some(conn) = handles.get(&p_db) {
-            if conn.execute_batch(&sql).is_ok() {
-                valid = true;
-            }
-        }
-    }
-
-    if !valid {
-        let handles = SQLITE_CONNECTIONS.lock().unwrap();
-        let conn = handles.get(&p_db).unwrap();
-        // Se a preparação falhar de verdade, tratamos o erro sem travar a compilação
-        let msg = match conn.prepare(&sql) {
-            Ok(_) => "Unknown SQLite evaluation mismatch".to_string(),
-            Err(err) => format!("{}", err),
         };
-        log!("libsqlite3: prepare error: {}", msg);
-        set_error(p_db, msg);
-        if pp_stmt != 0 {
-            let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
-            env.mem.write(p, 0u32);
+        match conn.prepare(&sql) {
+            Ok(stmt) => {
+                let count = stmt.column_count();
+                let names = (0..count)
+                    .map(|i| stmt.column_name(i).unwrap_or_default().to_owned())
+                    .collect::<Vec<_>>();
+                (count, names)
+            }
+            Err(err) => {
+                let msg = format!("{}", err);
+                log!("libsqlite3: prepare error: {}", msg);
+                set_error(p_db, msg);
+                if pp_stmt != 0 {
+                    let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
+                    env.mem.write(p, 0u32);
+                }
+                return SQLITE_ERROR;
+            }
         }
-        return SQLITE_ERROR;
-    }
+    };
+    clear_error(p_db);
 
     let stmt_handle = alloc_handle();
     SQLITE_STATEMENTS.lock().unwrap().insert(
@@ -292,7 +302,12 @@ pub fn sqlite3_prepare_v2(
             sql,
             bindings: HashMap::new(),
             columns: Vec::new(),
-            column_names: Vec::new(),
+            column_count,
+            result_rows: Vec::new(),
+            next_row: 0,
+            executed: false,
+            column_names,
+
             column_name_ptrs: HashMap::new(),
             done: false,
         },
@@ -421,46 +436,58 @@ pub fn sqlite3_bind_null(_env: &mut Environment, stmt: u32, index: i32) -> u32 {
 
 // ---------- sqlite3_step ----------
 pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
-    let (db_handle, sql, bindings, already_done) = {
-        let stmts = SQLITE_STATEMENTS.lock().unwrap();
-        match stmts.get(&stmt_handle) {
-            Some(entry) => {
-                if entry.done {
-                    return SQLITE_DONE;
-                }
-                (
-                    entry.db_handle,
-                    entry.sql.clone(),
-                    entry.bindings.clone(),
-                    entry.done,
-                )
-            }
+    let (db_handle, sql, bindings, executed) = {
+        let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+        let entry = match stmts.get_mut(&stmt_handle) {
+            Some(entry) => entry,
             None => return SQLITE_MISUSE,
+        };
+
+        if entry.executed {
+            if entry.next_row < entry.result_rows.len() {
+                entry.columns = entry.result_rows[entry.next_row].clone();
+                entry.next_row += 1;
+                clear_error(entry.db_handle);
+                return SQLITE_ROW;
+            }
+            entry.columns.clear();
+            entry.done = true;
+            clear_error(entry.db_handle);
+            return SQLITE_DONE;
         }
+
+        (entry.db_handle, entry.sql.clone(), entry.bindings.clone(), entry.executed)
     };
 
-    if already_done {
+    if executed {
         return SQLITE_DONE;
     }
 
     let handles = SQLITE_CONNECTIONS.lock().unwrap();
     let conn = match handles.get(&db_handle) {
-        Some(c) => c,
-        None => return SQLITE_ERROR,
-    };
-
-    let mut real_stmt = match conn.prepare(&sql) {
-        Ok(s) => s,
-        Err(e) => {
-            log!("libsqlite3: sqlite3_step prepare error: {}", e);
-            set_error(db_handle, format!("{}", e));
+        Some(conn) => conn,
+        None => {
+            set_error(db_handle, "no such connection".into());
             return SQLITE_ERROR;
         }
     };
 
-    // Apply bindings
+    let mut real_stmt = match conn.prepare(&sql) {
+        Ok(stmt) => stmt,
+        Err(err) => {
+            let msg = format!("{}", err);
+            log!("libsqlite3: sqlite3_step prepare error: {}", msg);
+            set_error(db_handle, msg);
+            return SQLITE_ERROR;
+        }
+    };
+
     for (idx, val) in &bindings {
-        let _ = match val {
+        if *idx == 0 {
+            set_error(db_handle, "SQLite bind parameter indices start at 1".into());
+            return SQLITE_MISUSE;
+        }
+        let result = match val {
             BindValue::Int(v) => real_stmt.raw_bind_parameter(*idx, *v),
             BindValue::Int64(v) => real_stmt.raw_bind_parameter(*idx, *v),
             BindValue::Double(v) => real_stmt.raw_bind_parameter(*idx, *v),
@@ -468,90 +495,104 @@ pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
             BindValue::Blob(v) => real_stmt.raw_bind_parameter(*idx, v.as_slice()),
             BindValue::Null => real_stmt.raw_bind_parameter(*idx, rusqlite::types::Null),
         };
+        if let Err(err) = result {
+            let msg = format!("{}", err);
+            log!("libsqlite3: sqlite3_step bind error: {}", msg);
+            set_error(db_handle, msg);
+            return SQLITE_ERROR;
+        }
     }
 
-    // Check if this is a statement that returns rows
     let col_count = real_stmt.column_count();
-
-    // Snapshot the column names while we still have a `Statement` borrow on
-    // the connection — sqlite3_column_name needs them after we drop the
-    // statement at the end of this function. rusqlite returns them as &str
-    // referencing internal SQLite-owned memory; copy into owned `String`s.
-    let column_names_snapshot: Vec<String> = (0..col_count)
-        .map(|i| {
-            real_stmt
-                .column_name(i)
-                .map(|s| s.to_owned())
-                .unwrap_or_default()
-        })
-        .collect();
+    let column_names_snapshot = (0..col_count)
+        .map(|i| real_stmt.column_name(i).unwrap_or_default().to_owned())
+        .collect::<Vec<_>>();
 
     if col_count == 0 {
-        // Non-SELECT statement (INSERT, UPDATE, DELETE, CREATE, etc.)
         match real_stmt.raw_execute() {
-            Ok(_) => {
+            Ok(changes) => {
+                drop(real_stmt);
+                drop(handles);
+                LAST_CHANGES.lock().unwrap().insert(
+                    db_handle,
+                    changes.min(i32::MAX as usize) as i32,
+                );
                 let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
                 if let Some(entry) = stmts.get_mut(&stmt_handle) {
+                    entry.column_count = 0;
+                    entry.column_names = column_names_snapshot;
+                    entry.columns.clear();
+                    entry.result_rows.clear();
+                    entry.next_row = 0;
+                    entry.executed = true;
                     entry.done = true;
                 }
+                clear_error(db_handle);
                 SQLITE_DONE
             }
-            Err(e) => {
-                log!("libsqlite3: sqlite3_step execute error: {}", e);
-                set_error(db_handle, format!("{}", e));
+            Err(err) => {
+                let msg = format!("{}", err);
+                log!("libsqlite3: sqlite3_step execute error: {}", msg);
+                set_error(db_handle, msg);
                 SQLITE_ERROR
             }
         }
     } else {
-        // SELECT statement - get one row
         let mut rows = real_stmt.raw_query();
-        match rows.next() {
-            Ok(Some(row)) => {
-                let mut columns = Vec::with_capacity(col_count);
-                for i in 0..col_count {
-                    let val = match row.get_ref(i) {
-                        Ok(rusqlite::types::ValueRef::Null) => ColumnValue::Null,
-                        Ok(rusqlite::types::ValueRef::Integer(v)) => ColumnValue::Int(v),
-                        Ok(rusqlite::types::ValueRef::Real(v)) => ColumnValue::Double(v),
-                        Ok(rusqlite::types::ValueRef::Text(v)) => {
-                            ColumnValue::Text(String::from_utf8_lossy(v).into_owned())
-                        }
-                        Ok(rusqlite::types::ValueRef::Blob(v)) => ColumnValue::Blob(v.to_vec()),
-                        Err(_) => ColumnValue::Null,
-                    };
-                    columns.push(val);
+        let mut result_rows: Vec<Vec<ColumnValue>> = Vec::new();
+        loop {
+            let row = match rows.next() {
+                Ok(Some(row)) => row,
+                Ok(None) => break,
+                Err(err) => {
+                    let msg = format!("{}", err);
+                    log!("libsqlite3: sqlite3_step query error: {}", msg);
+                    set_error(db_handle, msg);
+                    return SQLITE_ERROR;
                 }
-                // Store columns
-                drop(rows);
-                drop(real_stmt);
-                drop(handles);
-                let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
-                if let Some(entry) = stmts.get_mut(&stmt_handle) {
-                    entry.columns = columns;
-                    entry.column_names = column_names_snapshot;
-                }
-                SQLITE_ROW
+            };
+
+            let mut columns = Vec::with_capacity(col_count);
+            for i in 0..col_count {
+                let value = match row.get_ref(i) {
+                    Ok(rusqlite::types::ValueRef::Null) => ColumnValue::Null,
+                    Ok(rusqlite::types::ValueRef::Integer(v)) => ColumnValue::Int(v),
+                    Ok(rusqlite::types::ValueRef::Real(v)) => ColumnValue::Double(v),
+                    Ok(rusqlite::types::ValueRef::Text(v)) => {
+                        ColumnValue::Text(String::from_utf8_lossy(v).into_owned())
+                    }
+                    Ok(rusqlite::types::ValueRef::Blob(v)) => ColumnValue::Blob(v.to_vec()),
+                    Err(err) => {
+                        let msg = format!("{}", err);
+                        log!("libsqlite3: sqlite3_step column read error: {}", msg);
+                        set_error(db_handle, msg);
+                        return SQLITE_ERROR;
+                    }
+                };
+                columns.push(value);
             }
-            Ok(None) => {
-                drop(rows);
-                drop(real_stmt);
-                drop(handles);
-                let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
-                if let Some(entry) = stmts.get_mut(&stmt_handle) {
-                    entry.done = true;
-                    entry.columns.clear();
-                    // Keep `column_names` so post-loop calls to
-                    // `sqlite3_column_name` still resolve, mirroring real
-                    // SQLite's behaviour after SQLITE_DONE.
-                    entry.column_names = column_names_snapshot;
-                }
-                SQLITE_DONE
-            }
-            Err(e) => {
-                log!("libsqlite3: sqlite3_step query error: {}", e);
-                set_error(db_handle, format!("{}", e));
-                SQLITE_ERROR
-            }
+            result_rows.push(columns);
+        }
+
+        drop(rows);
+        drop(real_stmt);
+        drop(handles);
+
+        let first_row = result_rows.first().cloned();
+        let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
+        if let Some(entry) = stmts.get_mut(&stmt_handle) {
+            entry.column_count = col_count;
+            entry.column_names = column_names_snapshot;
+            entry.result_rows = result_rows;
+            entry.next_row = if first_row.is_some() { 1 } else { 0 };
+            entry.columns = first_row.unwrap_or_default();
+            entry.executed = true;
+            entry.done = entry.result_rows.is_empty();
+            let status = if entry.done { SQLITE_DONE } else { SQLITE_ROW };
+            clear_error(db_handle);
+            status
+        } else {
+            SQLITE_MISUSE
         }
     }
 }
@@ -562,7 +603,10 @@ pub fn sqlite3_reset(_env: &mut Environment, stmt_handle: u32) -> u32 {
     match stmts.get_mut(&stmt_handle) {
         Some(entry) => {
             entry.done = false;
+            entry.executed = false;
             entry.columns.clear();
+            entry.result_rows.clear();
+            entry.next_row = 0;
             SQLITE_OK
         }
         None => SQLITE_MISUSE,
@@ -595,7 +639,7 @@ pub fn sqlite3_finalize(_env: &mut Environment, stmt_handle: u32) -> u32 {
 pub fn sqlite3_column_count(_env: &mut Environment, stmt_handle: u32) -> i32 {
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
     match stmts.get(&stmt_handle) {
-        Some(entry) => entry.columns.len() as i32,
+        Some(entry) => entry.column_count as i32,
         None => 0,
     }
 }
@@ -837,11 +881,10 @@ pub fn sqlite3_errmsg(env: &mut Environment, p_db: u32) -> u32 {
 
 // ---------- sqlite3_changes ----------
 pub fn sqlite3_changes(_env: &mut Environment, p_db: u32) -> i32 {
-    let handles = SQLITE_CONNECTIONS.lock().unwrap();
-    match handles.get(&p_db) {
-        Some(_conn) => 0, // rusqlite doesn't easily expose this without a statement
-        None => 0,
+    if !SQLITE_CONNECTIONS.lock().unwrap().contains_key(&p_db) {
+        return 0;
     }
+    LAST_CHANGES.lock().unwrap().get(&p_db).copied().unwrap_or(0)
 }
 
 // ---------- sqlite3_last_insert_rowid ----------
@@ -868,8 +911,15 @@ pub fn sqlite3_busy_timeout(_env: &mut Environment, _p_db: u32, _ms: i32) -> u32
 }
 
 // ---------- sqlite3_errcode ----------
-pub fn sqlite3_errcode(_env: &mut Environment, _p_db: u32) -> u32 {
-    SQLITE_OK
+pub fn sqlite3_errcode(_env: &mut Environment, p_db: u32) -> u32 {
+    if !SQLITE_CONNECTIONS.lock().unwrap().contains_key(&p_db) {
+        return SQLITE_MISUSE;
+    }
+    if LAST_ERROR.lock().unwrap().contains_key(&p_db) {
+        SQLITE_ERROR
+    } else {
+        SQLITE_OK
+    }
 }
 
 // Export all functions
