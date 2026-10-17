@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   build-osx:
-    runs-on: macos-latest  
+    runs-on: macos-15-intel  
 
     steps:  
       - name: Checkout touchHLE
