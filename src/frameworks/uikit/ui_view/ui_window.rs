@@ -61,7 +61,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (f32)windowLevel { 0.0 }
 
 - (id)initWithFrame:(CGRect)frame {
+    log!("DIAG UIWindow initWithFrame: receiver={:?} frame={:?}", this, frame);
     let this = msg_super![env; this initWithFrame:frame];
+    let initialized_frame: CGRect = msg![env; this frame];
+    let initialized_bounds: CGRect = msg![env; this bounds];
+    log!("DIAG UIWindow initWithFrame: result={:?} frame={:?} bounds={:?}", this, initialized_frame, initialized_bounds);
     // Undocumented: windows seem to be hidden by default on iOS, unlike views.
     // Super call to bypass the overriden setter on this class, which would post
     // a notification.
@@ -99,6 +103,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     let screen: id = msg_class![env; UIScreen mainScreen];
     let screen_bounds: CGRect = msg![env; screen bounds];
     let current_bounds: CGRect = msg![env; this bounds];
+    let current_frame: CGRect = msg![env; this frame];
+    log!("DIAG UIWindow initWithCoder: window={:?} screen_bounds={:?} frame={:?} bounds={:?}", this, screen_bounds, current_frame, current_bounds);
     if current_bounds.size != screen_bounds.size {
         log_dbg!(
             "UIWindow {:?}: overriding NIB-encoded size {:?} with UIScreen.bounds size {:?}",
@@ -213,6 +219,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())makeKeyAndVisible {
+    let frame: CGRect = msg![env; this frame];
+    let bounds: CGRect = msg![env; this bounds];
+    log!("DIAG UIWindow makeKeyAndVisible: window={:?} frame={:?} bounds={:?}", this, frame, bounds);
     // TODO: We don't currently have send any non-touch events to windows,
     // so there's no meaning in it yet.
 
@@ -246,6 +255,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 // associated view, and notify the existing appearance lifecycle through
 // `-addSubview:`.
 - (())setRootViewController:(id)view_controller {
+    let frame: CGRect = msg![env; this frame];
+    let bounds: CGRect = msg![env; this bounds];
+    log!("DIAG UIWindow setRootViewController: window={:?} controller={:?} frame={:?} bounds={:?}", this, view_controller, frame, bounds);
     log_dbg!("[(UIWindow*){:?} setRootViewController:{:?}]", this, view_controller);
 
     let previous = env
