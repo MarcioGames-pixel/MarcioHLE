@@ -1575,7 +1575,16 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; layer bounds]
 }
 - (())setBounds:(CGRect)bounds {
+    let requested_bounds = bounds;
+    let view_class: Class = msg![env; this class];
+    let class_name = env.objc.get_class_name(view_class).to_owned();
+    if class_name == "UIWindow" {
+        log!("DIAG UIWindow setBounds: window={:?} requested={:?}", this, requested_bounds);
+    }
     let mut bounds = touchhle_cocos_sanitize_rect(bounds);
+    if class_name == "UIWindow" {
+        log!("DIAG UIWindow setBounds: window={:?} sanitized={:?}", this, bounds);
+    }
 
     if std::env::var_os("TOUCHHLE_FORCE_LANDSCAPE_VIEW_BOUNDS").is_some() {
         let view_class: Class = msg![env; this class];
@@ -1623,6 +1632,12 @@ pub const CLASSES: ClassExports = objc_classes! {
     msg![env; layer frame]
 }
 - (())setFrame:(CGRect)frame {
+    let requested_frame = frame;
+    let view_class: Class = msg![env; this class];
+    let class_name = env.objc.get_class_name(view_class).to_owned();
+    if class_name == "UIWindow" {
+        log!("DIAG UIWindow setFrame: window={:?} requested={:?}", this, requested_frame);
+    }
     // ULTRAHLE_MINIONJUMP_SETFRAME_BEGIN
     let frame = if ultrahle_minionjump_force_landscape_ccglview(env, this) {
         touchhle_cocos_landscape_rect(env)
@@ -1632,6 +1647,9 @@ pub const CLASSES: ClassExports = objc_classes! {
     // ULTRAHLE_MINIONJUMP_SETFRAME_END
 
     let mut frame = touchhle_cocos_sanitize_rect(frame);
+    if class_name == "UIWindow" {
+        log!("DIAG UIWindow setFrame: window={:?} sanitized={:?}", this, frame);
+    }
 
     if std::env::var_os("TOUCHHLE_FORCE_LANDSCAPE_VIEW_BOUNDS").is_some() {
         let view_class: Class = msg![env; this class];
