@@ -272,14 +272,18 @@ pub fn sqlite3_prepare_v2(
                 return SQLITE_MISUSE;
             }
         };
-        match conn.prepare(&sql) {
+        let prepared = match conn.prepare(&sql) {
             Ok(stmt) => {
                 let count = stmt.column_count();
                 let names = (0..count)
                     .map(|i| stmt.column_name(i).unwrap_or_default().to_owned())
                     .collect::<Vec<_>>();
-                (count, names)
+                Ok((count, names))
             }
+            Err(err) => Err(err),
+        };
+        match prepared {
+            Ok(metadata) => metadata,
             Err(err) => {
                 let msg = format!("{}", err);
                 log!("libsqlite3: prepare error: {}", msg);
