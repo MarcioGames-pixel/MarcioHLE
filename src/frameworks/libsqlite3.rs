@@ -440,6 +440,7 @@ pub fn sqlite3_bind_null(_env: &mut Environment, stmt: u32, index: i32) -> u32 {
 
 // ---------- sqlite3_step ----------
 pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
+    log!("DIAG libsqlite3: sqlite3_step(stmt={:#x})", stmt_handle);
     let (db_handle, sql, bindings, executed) = {
         let mut stmts = SQLITE_STATEMENTS.lock().unwrap();
         let entry = match stmts.get_mut(&stmt_handle) {
@@ -463,7 +464,18 @@ pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
         (entry.db_handle, entry.sql.clone(), entry.bindings.clone(), entry.executed)
     };
 
+    log!(
+        "DIAG libsqlite3: stepping stmt={:#x} db={:#x} sql={:?} bindings={}",
+        stmt_handle,
+        db_handle,
+        &sql[..sql.len().min(180)],
+        bindings.len()
+    );
     if executed {
+        log!(
+            "DIAG libsqlite3: stmt={:#x} already executed; returning SQLITE_DONE",
+            stmt_handle
+        );
         return SQLITE_DONE;
     }
 
@@ -727,7 +739,7 @@ pub fn sqlite3_column_bytes(_env: &mut Environment, stmt_handle: u32, col: i32) 
     // does not report the in-memory size of an i32/f64. Keep this consistent
     // with sqlite3_column_text(), which formats numeric values as strings.
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
-    match stmts.get(&stmt_handle) {
+    let result = match stmts.get(&stmt_handle) {
         Some(entry) => match entry.columns.get(col as usize) {
             Some(ColumnValue::Text(v)) => v.len().min(i32::MAX as usize) as i32,
             Some(ColumnValue::Blob(v)) => v.len().min(i32::MAX as usize) as i32,
@@ -736,7 +748,14 @@ pub fn sqlite3_column_bytes(_env: &mut Environment, stmt_handle: u32, col: i32) 
             _ => 0,
         },
         None => 0,
-    }
+    };
+    log!(
+        "DIAG libsqlite3: sqlite3_column_bytes(stmt={:#x}, col={}) => {}",
+        stmt_handle,
+        col,
+        result
+    );
+    result
 }
 
 // ---------- sqlite3_column_type ----------
