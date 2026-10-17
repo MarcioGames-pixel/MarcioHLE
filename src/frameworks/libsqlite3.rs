@@ -297,6 +297,13 @@ pub fn sqlite3_prepare_v2(
         }
     };
     clear_error(p_db);
+    log!(
+        "DIAG libsqlite3: prepare metadata db={:#x} columns={} names={:?} sql={:?}",
+        p_db,
+        column_count,
+        column_names,
+        &sql[..sql.len().min(180)]
+    );
 
     let stmt_handle = alloc_handle();
     SQLITE_STATEMENTS.lock().unwrap().insert(
@@ -321,6 +328,10 @@ pub fn sqlite3_prepare_v2(
         let p: MutPtr<u32> = MutPtr::from_bits(pp_stmt);
         env.mem.write(p, stmt_handle);
     }
+    log!(
+        "DIAG libsqlite3: prepare success db={:#x} stmt={:#x} column_count={}",
+        p_db, stmt_handle, column_count
+    );
     SQLITE_OK
 }
 
@@ -452,12 +463,17 @@ pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
             if entry.next_row < entry.result_rows.len() {
                 entry.columns = entry.result_rows[entry.next_row].clone();
                 entry.next_row += 1;
+                let row_num = entry.next_row;
+                let col_count = entry.columns.len();
+                let sql = entry.sql.clone();
                 clear_error(entry.db_handle);
+                log!("DIAG libsqlite3: step stmt={:#x} => SQLITE_ROW row={} columns={} sql={:?}", stmt_handle, row_num, col_count, &sql[..sql.len().min(100)]);
                 return SQLITE_ROW;
             }
             entry.columns.clear();
             entry.done = true;
             clear_error(entry.db_handle);
+            log!("DIAG libsqlite3: step stmt={:#x} => SQLITE_DONE (already executed)", stmt_handle);
             return SQLITE_DONE;
         }
 
@@ -605,6 +621,28 @@ pub fn sqlite3_step(_env: &mut Environment, stmt_handle: u32) -> u32 {
             entry.executed = true;
             entry.done = entry.result_rows.is_empty();
             let status = if entry.done { SQLITE_DONE } else { SQLITE_ROW };
+            let row_count = entry.result_rows.len();
+            let current_columns = entry.columns.len();
+            log!(
+                "DIAG libsqlite3: step stmt={:#x} result={} rows_materialized={} current_columns={} sql={:?}",
+                stmt_handle,
+                if status == SQLITE_ROW { "SQLITE_ROW" } else { "SQLITE_DONE" },
+                row_count,
+                current_columns,
+                &entry.sql[..entry.sql.len().min(100)]
+            );
+            if entry.sql.to_ascii_lowercase().contains("pragma table_info") {
+                for (row_idx, row) in entry.result_rows.iter().enumerate() {
+                    let values = row.iter().map(|v| match v {
+                        ColumnValue::Int(n) => format!("int:{n}"),
+                        ColumnValue::Double(n) => format!("real:{n}"),
+                        ColumnValue::Text(s) => format!("text:{:?}", s),
+                        ColumnValue::Blob(b) => format!("blob:{}bytes", b.len()),
+                        ColumnValue::Null => "NULL".to_string(),
+                    }).collect::<Vec<_>>();
+                    log!("DIAG libsqlite3: table_info row={} values={:?}", row_idx, values);
+                }
+            }
             clear_error(db_handle);
             status
         } else {
@@ -713,7 +751,12 @@ pub fn sqlite3_column_text(env: &mut Environment, stmt_handle: u32, col: i32) ->
                 Some(ColumnValue::Text(v)) => v.clone(),
                 Some(ColumnValue::Int(v)) => format!("{}", v),
                 Some(ColumnValue::Double(v)) => format!("{}", v),
-                _ => return 0,
+                Some(ColumnValue::Blob(v)) => String::from_utf8_lossy(v).into_owned(),
+                Some(ColumnValue::Null) => return 0,
+                None => {
+                    log!("DIAG libsqlite3: column_text invalid column stmt={:#x} col={} available={}", stmt_handle, col, entry.columns.len());
+                    return 0;
+                }
             },
             None => return 0,
         }
