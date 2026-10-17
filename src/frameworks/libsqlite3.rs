@@ -722,13 +722,17 @@ pub fn sqlite3_column_text(env: &mut Environment, stmt_handle: u32, col: i32) ->
 
 // ---------- sqlite3_column_bytes ----------
 pub fn sqlite3_column_bytes(_env: &mut Environment, stmt_handle: u32, col: i32) -> i32 {
+    // sqlite3_column_bytes() reports the byte length of the value's current
+    // text representation when SQLite converts a numeric value to text. It
+    // does not report the in-memory size of an i32/f64. Keep this consistent
+    // with sqlite3_column_text(), which formats numeric values as strings.
     let stmts = SQLITE_STATEMENTS.lock().unwrap();
     match stmts.get(&stmt_handle) {
         Some(entry) => match entry.columns.get(col as usize) {
-            Some(ColumnValue::Text(v)) => v.len() as i32,
-            Some(ColumnValue::Blob(v)) => v.len() as i32,
-            Some(ColumnValue::Int(_)) => 4,
-            Some(ColumnValue::Double(_)) => 8,
+            Some(ColumnValue::Text(v)) => v.len().min(i32::MAX as usize) as i32,
+            Some(ColumnValue::Blob(v)) => v.len().min(i32::MAX as usize) as i32,
+            Some(ColumnValue::Int(v)) => v.to_string().len() as i32,
+            Some(ColumnValue::Double(v)) => v.to_string().len() as i32,
             _ => 0,
         },
         None => 0,
